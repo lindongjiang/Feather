@@ -1,6 +1,6 @@
 //
 //  AboutViewController.swift
-//  feather
+//  mantou
 //
 //  Created by samara on 7/10/24.
 //  Copyright (c) 2024 Samara M (khcrysalis)
@@ -54,10 +54,10 @@ class AboutViewController: FRSTableViewController {
 		getURL(url: creditsURL) { result in
 			switch result {
 			case .success(let credits):
-				self.credits = credits
-				self.tableData[1] = credits.map { $0.name ?? "" }
 				DispatchQueue.main.async {
-					self.tableView.reloadSections(IndexSet(integer: 1), with: .automatic)
+					self.credits = credits
+					self.tableData[1] = credits.map { $0.name ?? "" }
+					self.tableView.reloadData()
 				}
 			case .failure(_):
 				Debug.shared.log(message: "Error fetching credits")
@@ -67,9 +67,9 @@ class AboutViewController: FRSTableViewController {
 		getURL(url: sponsorsURL) { result in
 			switch result {
 			case .success(let sponsors):
-				self.creditsSponsors = sponsors
 				DispatchQueue.main.async {
-					self.tableView.reloadSections(IndexSet(integer: 2), with: .automatic)
+					self.creditsSponsors = sponsors
+					self.tableView.reloadData()
 				}
 			case .failure(_):
 				Debug.shared.log(message: "Error fetching sponsors")
@@ -97,7 +97,7 @@ class AboutViewController: FRSTableViewController {
 
 	
 	@objc func shareButtonTapped() {
-		let shareText = "Feather - https://github.com/khcrysalis/feather"
+		let shareText = "Mantou - https://github.com/khcrysalis/feather"
 		let activityViewController = UIActivityViewController(activityItems: [shareText], applicationActivities: nil)
 		
 		if let popoverController = activityViewController.popoverPresentationController {

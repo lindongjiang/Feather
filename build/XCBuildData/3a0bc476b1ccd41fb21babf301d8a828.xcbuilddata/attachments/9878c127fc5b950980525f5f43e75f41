@@ -1,0 +1,4 @@
+module CAsyncHTTPClient {
+umbrella header "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/async-http-client/Sources/CAsyncHTTPClient/include/CAsyncHTTPClient.h"
+export *
+}

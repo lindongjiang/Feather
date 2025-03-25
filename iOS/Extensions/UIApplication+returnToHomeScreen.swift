@@ -1,6 +1,6 @@
 //
 //  UIApplication+returnToHomeScreen.swift
-//  feather
+//  mantou
 //
 //  Created by Lakhan Lothiyi on 22/08/2024.
 //

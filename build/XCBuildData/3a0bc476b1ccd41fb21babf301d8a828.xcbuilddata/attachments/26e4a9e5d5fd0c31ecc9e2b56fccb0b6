@@ -1,0 +1,18 @@
+{
+  "" : {
+    "diagnostics" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-master.dia",
+    "emit-module-dependencies" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-master-emit-module.dia",
+    "swift-dependencies" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-master.swiftdeps"
+  },
+  "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/Sources/Collections/Collections.swift" : {
+    "const-values" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-6a0fc04d253d2c276701fb4307b20860.swiftconstvalues",
+    "dependencies" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-6a0fc04d253d2c276701fb4307b20860.d",
+    "diagnostics" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-6a0fc04d253d2c276701fb4307b20860.dia",
+    "index-unit-output-path" : "/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-6a0fc04d253d2c276701fb4307b20860.o",
+    "llvm-bc" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-6a0fc04d253d2c276701fb4307b20860.bc",
+    "object" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-6a0fc04d253d2c276701fb4307b20860.o",
+    "swift-dependencies" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-6a0fc04d253d2c276701fb4307b20860.swiftdeps",
+    "swiftmodule" : "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-collections/build/swift-collections.build/Debug-iphonesimulator/Collections.build/Objects-normal/arm64/Collections-6a0fc04d253d2c276701fb4307b20860~partial.swiftmodule"
+  }
+}

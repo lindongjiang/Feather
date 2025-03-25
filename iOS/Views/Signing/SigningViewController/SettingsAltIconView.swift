@@ -1,6 +1,6 @@
 //
 //  SettingsAltIconView.swift
-//  feather
+//  mantou
 //
 //  Created by samara on 18.01.2025.
 //

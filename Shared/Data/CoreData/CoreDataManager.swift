@@ -1,6 +1,6 @@
 //
 //  CDManager.swift
-//  feather
+//  mantou
 //
 //  Created by samara on 7/29/24.
 //  Copyright (c) 2024 Samara M (khcrysalis)
@@ -19,10 +19,9 @@ final class CoreDataManager {
 		let container = NSPersistentContainer(name: "Feather")
 		container.loadPersistentStores(completionHandler: { (storeDescription, error) in
 			if let error = error as NSError? {
-				fatalError("Unresolved error \(error), \(error.userInfo)")
+				Debug.shared.log(message: "Unresolved error \(error), \(error.userInfo)")
 			}
 		})
-		
 		return container
 	}()
 	

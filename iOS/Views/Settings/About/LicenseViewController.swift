@@ -1,6 +1,6 @@
 //
 //  LicenseViewController.swift
-//  feather
+//  mantou
 //
 //  Created by samara on 28.10.2024.
 //

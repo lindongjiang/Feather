@@ -1,10 +1,9 @@
-
-# Feather
+# Mantou
 [![GitHub Release](https://img.shields.io/github/v/release/khcrysalis/feather?include_prereleases)](https://github.com/khcrysalis/feather/releases)
 [![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/khcrysalis/feather/total)](https://github.com/khcrysalis/feather/releases)
 [![GitHub License](https://img.shields.io/github/license/khcrysalis/feather?color=%23C96FAD)](https://github.com/khcrysalis/feather/blob/main/LICENSE)
 
-Feather allows you to use an Apple Developer Account to sign and install applications on device without needing a computer on stock iOS versions, while allowing easy management with its applications.
+Mantou allows you to use an Apple Developer Account to sign and install applications on device without needing a computer on stock iOS versions, while allowing easy management with its applications.
 
 Due to limitations, it's hard to tell if the application is actually installed, so you will need to keep track of whats on your device. This is an entirely stock application and uses built-in features to be able to do this!
 
@@ -33,7 +32,7 @@ Due to limitations, it's hard to tell if the application is actually installed, 
 - Swift 5.9
 - iOS 15
 
-Feather is not exactly as light as a feather as it needs to include an entire server framework so it can host it's server locally, totaling around 40mb~ when successfully compiled. While this is annoying to me, it doesn't really matter at the end as it does it's job.
+Mantou is not exactly as light as a feather as it needs to include an entire server framework so it can host it's server locally, totaling around 40mb~ when successfully compiled. While this is annoying to me, it doesn't really matter at the end as it does it's job.
 
 1. Clone repository
     ```sh
@@ -43,7 +42,7 @@ Feather is not exactly as light as a feather as it needs to include an entire se
 2. Compile
     ```sh
     cd Feather
-    gmake package SCHEME="'feather (Release)'" # Build, Use `SCHEME="'feather (Debug)'"` for debug build
+    gmake package SCHEME="'mantou (Release)'" # Build, Use `SCHEME="'mantou (Debug)'"` for debug build
     ```
 
 3. Updating

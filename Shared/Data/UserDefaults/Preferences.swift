@@ -1,6 +1,6 @@
 //
 //  Preferences.swift
-//  feather
+//  mantou
 //
 //  Created by samara on 5/17/24.
 //  Copyright (c) 2024 Samara M (khcrysalis)
@@ -13,47 +13,47 @@ enum Preferences {
 	static var installPathChangedCallback: ((String?) -> Void)?
 	static let defaultInstallPath: String = "https://api.palera.in"
 	
-	@Storage(key: "Feather.UserSpecifiedOnlinePath", defaultValue: defaultInstallPath)
+	@Storage(key: "Mantou.UserSpecifiedOnlinePath", defaultValue: defaultInstallPath)
 	static var onlinePath: String? { didSet { installPathChangedCallback?(onlinePath) } }
 	
-	@Storage(key: "Feather.UserSelectedServer", defaultValue: false)
+	@Storage(key: "Mantou.UserSelectedServer", defaultValue: false)
 	static var userSelectedServer: Bool
 	
-	@Storage(key: "Feather.DefaultRepos", defaultValue: false)
+	@Storage(key: "Mantou.DefaultRepos", defaultValue: false)
 	// Default repo is from the repository
 	static var defaultRepos: Bool
 	
-	@Storage(key: "Feather.AppUpdates", defaultValue: false)
+	@Storage(key: "Mantou.AppUpdates", defaultValue: false)
 	// Default repo is from the repository
 	static var appUpdates: Bool
 	
-	@Storage(key: "Feather.gotSSLCerts", defaultValue: false)
+	@Storage(key: "Mantou.gotSSLCerts", defaultValue: false)
 	static var gotSSLCerts: Bool
 	
-	@Storage(key: "Feather.BDefaultRepos", defaultValue: false)
+	@Storage(key: "Mantou.BDefaultRepos", defaultValue: false)
 	// Default beta repo is from the repository
 	static var bDefaultRepos: Bool
 	
-	@Storage(key: "Feather.userIntefacerStyle", defaultValue: UIUserInterfaceStyle.unspecified.rawValue)
+	@Storage(key: "Mantou.userIntefacerStyle", defaultValue: UIUserInterfaceStyle.unspecified.rawValue)
 	static var preferredInterfaceStyle: Int
 	
-	@CodableStorage(key: "Feather.AppTintColor", defaultValue: CodableColor(UIColor(hex: "848ef9")))
+	@CodableStorage(key: "Mantou.AppTintColor", defaultValue: CodableColor(UIColor(hex: "848ef9")))
 	static var appTintColor: CodableColor
 	
-	@Storage(key: "Feather.OnboardingActive", defaultValue: true)
+	@Storage(key: "Mantou.OnboardingActive", defaultValue: true)
 	static var isOnboardingActive: Bool
 	
-	@Storage(key: "Feather.selectedCert", defaultValue: 0)
+	@Storage(key: "Mantou.selectedCert", defaultValue: 0)
 	static var selectedCert: Int
 	
-	@Storage(key: "Feather.ppqcheckBypass", defaultValue: "")
+	@Storage(key: "Mantou.ppqcheckBypass", defaultValue: "")
 	// random string
 	static var pPQCheckString: String
 	
-	@Storage(key: "Feather.CertificateTitleAppIDtoTeamID", defaultValue: false)
+	@Storage(key: "Mantou.CertificateTitleAppIDtoTeamID", defaultValue: false)
 	static var certificateTitleAppIDtoTeamID: Bool
 	
-	@Storage(key: "Feather.AppDescriptionAppearence", defaultValue: 0)
+	@Storage(key: "Mantou.AppDescriptionAppearence", defaultValue: 0)
 	// 0 == Default appearence
 	// 1 == Replace subtitle with localizedDescription
 	// 2 == Move localizedDescription below app icon, and above screenshots
@@ -63,7 +63,7 @@ enum Preferences {
 	/// Preferred language
 	static var preferredLanguageCode: String?
 	
-	@Storage(key: "Feather.Beta", defaultValue: false)
+	@Storage(key: "Mantou.Beta", defaultValue: false)
 	//
 	static var beta: Bool
 	

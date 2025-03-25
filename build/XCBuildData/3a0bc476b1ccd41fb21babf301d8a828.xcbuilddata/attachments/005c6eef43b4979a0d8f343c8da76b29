@@ -1,0 +1,4 @@
+module CNIOExtrasZlib {
+umbrella header "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-nio-extras/Sources/CNIOExtrasZlib/include/CNIOExtrasZlib.h"
+export *
+}

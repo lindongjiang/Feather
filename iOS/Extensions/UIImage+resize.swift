@@ -1,6 +1,6 @@
 //
 //  UIImage+resize.swift
-//  feather
+//  mantou
 //
 //  Created by samara on 8/13/24.
 //

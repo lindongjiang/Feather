@@ -1,6 +1,6 @@
 //
 //  AppDelegate.swift
-//  feather
+//  mantou
 //
 //  Created by samara on 5/17/24.
 //  Copyright (c) 2024 Samara M (khcrysalis)
@@ -16,7 +16,7 @@ import UIOnboarding
 
 var downloadTaskManager = DownloadTaskManager.shared
 class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControllerDelegate {
-    static let isSideloaded = Bundle.main.bundleIdentifier != "kh.crysalis.feather"
+    static let isSideloaded = Bundle.main.bundleIdentifier != "com.mantou.app"
     var window: UIWindow?
     var loaderAlert = presentLoader()
 
@@ -27,6 +27,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
 
         if userDefaults.data(forKey: UserDefaults.signingDataKey) == nil {
             userDefaults.signingOptions = UserDefaults.defaultSigningData
+        }
+        
+        // 检查是否存储了UDID
+        if let udid = userDefaults.string(forKey: "deviceUDID") {
+            globalDeviceUUID = udid
+            Debug.shared.log(message: "已加载存储的UDID: \(udid)")
         }
 
 		createSourcesDirectory()
@@ -62,11 +68,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         Debug.shared.log(message: "Version: \(UIDevice.current.systemVersion)")
         Debug.shared.log(message: "Name: \(UIDevice.current.name)")
         Debug.shared.log(message: "Model: \(UIDevice.current.model)")
-        Debug.shared.log(message: "Feather Version: \(logAppVersionInfo())\n")
+        Debug.shared.log(message: "Mantou Version: \(logAppVersionInfo())\n")
 
 		if Preferences.appUpdates {
 			// Register background task
-			BGTaskScheduler.shared.register(forTaskWithIdentifier: "kh.crysalis.feather.sourcerefresh", using: nil) { task in
+			BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.mantou.app.sourcerefresh", using: nil) { task in
 				self.handleAppRefresh(task: task as! BGAppRefreshTask)
 			}
 			scheduleAppRefresh()
@@ -88,7 +94,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     }
 
     func scheduleAppRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: "kh.crysalis.feather.sourcerefresh")
+        let request = BGAppRefreshTaskRequest(identifier: "com.mantou.app.sourcerefresh")
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
 
         do {
@@ -118,7 +124,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     }
 
     func application(_: UIApplication, open url: URL, options _: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        if url.scheme == "feather" {
+        if url.scheme == "mantou" {
             // I know this is super hacky, honestly
             // I don't *exactly* care as it just works :shrug:
             if let config = url.absoluteString.range(of: "/source/") {
@@ -207,6 +213,25 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                 } else {
                     Debug.shared.log(message: "Invalid or non-HTTPS URL", type: .error)
                 }
+            } else if let config = url.absoluteString.range(of: "/udid/") {
+                // 处理UDID回调
+                let fullPath = String(url.absoluteString[config.upperBound...])
+                
+                if let udid = extractUDID(from: fullPath) {
+                    // 保存UDID
+                    globalDeviceUUID = udid
+                    UserDefaults.standard.set(udid, forKey: "deviceUDID")
+                    Debug.shared.log(message: "成功获取并保存UDID: \(udid)")
+                    
+                    // 通知UI更新
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("UDIDCallbackReceived"),
+                        object: nil,
+                        userInfo: ["udid": udid]
+                    )
+                }
+                
+                return true
             }
 
             return true
@@ -250,6 +275,28 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
 
         return false
     }
+    
+    // 从URL中提取UDID
+    private func extractUDID(from urlString: String) -> String? {
+        // 简单解析示例，实际情况可能需要根据服务器返回格式调整
+        let components = urlString.components(separatedBy: "=")
+        if components.count >= 2, components[0].lowercased().contains("udid") {
+            return components[1]
+        }
+        
+        // 如果无法解析，尝试URL解码并查找
+        if let decodedString = urlString.removingPercentEncoding {
+            // 使用正则表达式查找UDID格式的字符串
+            let pattern = "[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}"
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: decodedString, range: NSRange(decodedString.startIndex..., in: decodedString)) {
+                let matchedString = String(decodedString[Range(match.range, in: decodedString)!])
+                return matchedString
+            }
+        }
+        
+        return nil
+    }
 
     func didFinishOnboarding(onboardingViewController _: UIOnboardingViewController) {
         Preferences.isOnboardingActive = false
@@ -268,8 +315,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     fileprivate func addDefaultRepos() {
         if !Preferences.defaultRepos {
             CoreDataManager.shared.saveSource(
-                name: "Feather Repository",
-                id: "kh.crysalis.feather-repo",
+                name: "Mantou Repository",
+                id: "com.mantou.app-repo",
                 iconURL: URL(string: "https://github.com/khcrysalis/Feather/blob/main/iOS/Icons/Main/Mac%403x.png?raw=true"),
                 url: "https://github.com/khcrysalis/Feather/raw/main/app-repo.json"
             ) { _ in
@@ -314,7 +361,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                 config.urlCache = nil
                 return DataLoader(configuration: config)
             }()
-            let dataCache = try? DataCache(name: "kh.crysalis.feather.datacache") // disk cache
+            let dataCache = try? DataCache(name: "com.mantou.app.datacache") // disk cache
             let imageCache = Nuke.ImageCache() // memory cache
             dataCache?.sizeLimit = 500 * 1024 * 1024
             imageCache.costLimit = 100 * 1024 * 1024
@@ -368,7 +415,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
 extension UIOnboardingViewConfiguration {
     static func setUp() -> Self {
         let welcomeToLine = NSMutableAttributedString(string: String.localized("ONBOARDING_WELCOMETITLE_1"))
-        let featherLine = NSMutableAttributedString(string: "Feather", attributes: [
+        let featherLine = NSMutableAttributedString(string: "Mantou", attributes: [
             .foregroundColor: UIColor.tintColor,
         ])
 

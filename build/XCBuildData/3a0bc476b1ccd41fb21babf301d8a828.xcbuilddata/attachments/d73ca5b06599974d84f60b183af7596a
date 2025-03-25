@@ -1,0 +1,4 @@
+module CNIOBoringSSL {
+umbrella header "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-nio-ssl/Sources/CNIOBoringSSL/include/CNIOBoringSSL.h"
+export *
+}

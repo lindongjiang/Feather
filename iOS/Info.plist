@@ -4,7 +4,7 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>kh.crysalis.feather.sourcerefresh</string>
+		<string>com.mantou.app.sourcerefresh</string>
 	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
@@ -15,7 +15,17 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>kh.crysalis.feather.ipa</string>
+				<string>com.mantou.app.ipa</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Configuration Profile</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.apple.mobileconfig</string>
 			</array>
 		</dict>
 	</array>
@@ -78,13 +88,22 @@
 			<key>CFBundleURLIconFile</key>
 			<string>Mac@3x</string>
 			<key>CFBundleURLName</key>
-			<string>kh.crysalis.feather</string>
+			<string>com.mantou.app</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>feather</string>
+				<string>mantou</string>
 			</array>
 		</dict>
-		<dict/>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>ipa.cloudmantoub.online</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>udid</string>
+			</array>
+		</dict>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>
@@ -107,7 +126,7 @@
 			<key>UTTypeIconFiles</key>
 			<array/>
 			<key>UTTypeIdentifier</key>
-			<string>kh.crysalis.feather.ipa</string>
+			<string>com.mantou.app.ipa</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -117,6 +136,27 @@
 				<key>public.mime-type</key>
 				<array>
 					<string>application/octet-stream</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Configuration Profile</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.apple.mobileconfig</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mobileconfig</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-apple-aspen-config</string>
 				</array>
 			</dict>
 		</dict>

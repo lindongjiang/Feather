@@ -1,6 +1,6 @@
 //
 //  TabbarController.swift
-//  feather
+//  mantou
 //
 //  Created by samara on 5/17/24.
 //  Copyright (c) 2024 Samara M (khcrysalis)
@@ -14,6 +14,7 @@ struct TabbarView: View {
 	enum Tab: String {
 		case sources
 		case library
+		case store
 		case settings
 	}
 
@@ -21,6 +22,7 @@ struct TabbarView: View {
 		TabView(selection: $selectedTab) {
 			tab(for: .sources)
 			tab(for: .library)
+			tab(for: .store)
 			tab(for: .settings)
 		}
 		.onChange(of: selectedTab) { newTab in
@@ -52,6 +54,11 @@ struct TabbarView: View {
 				.edgesIgnoringSafeArea(.all)
 				.tabItem { Label(String.localized("TAB_LIBRARY"), systemImage: "square.grid.2x2.fill") }
 				.tag(Tab.library)
+		case .store:
+			NavigationViewController(StoreCollectionViewController.self, title: "应用商店")
+				.edgesIgnoringSafeArea(.all)
+				.tabItem { Label("应用商店", systemImage: "bag.fill") }
+				.tag(Tab.store)
 		case .settings:
 			NavigationViewController(SettingsViewController.self, title: String.localized("TAB_SETTINGS"))
 				.edgesIgnoringSafeArea(.all)

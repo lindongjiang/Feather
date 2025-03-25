@@ -2,7 +2,7 @@ import CoreData
 import Foundation
 
 @objc class SourceRefreshOperation: Operation, @unchecked Sendable {
-    private let queue = DispatchQueue(label: "kh.crysalis.feather.sourcerefresh", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.mantou.app.sourcerefresh", qos: .userInitiated)
     private let isDebugMode: Bool = {
         var isDebug = false
         assert({
@@ -64,7 +64,7 @@ import Foundation
     }
 
     private func checkForUpdates(with sourceData: [(data: SourcesData, url: URL)]) {
-        let coreDataQueue = DispatchQueue(label: "kh.crysalis.feather.coredata", qos: .userInitiated)
+        let coreDataQueue = DispatchQueue(label: "com.mantou.app.coredata", qos: .userInitiated)
         
         coreDataQueue.sync {
             let signedApps = CoreDataManager.shared.getDatedSignedApps()

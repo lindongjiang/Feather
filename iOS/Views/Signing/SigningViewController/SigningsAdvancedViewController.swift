@@ -1,6 +1,6 @@
 //
 //  SigningsAdvancedViewController.swift
-//  feather
+//  mantou
 //
 //  Created by samara on 27.10.2024.
 //
@@ -11,7 +11,7 @@ class SigningsAdvancedViewController: FRSITableViewCOntroller {
 	private var toggleOptions: [TogglesOption]
 	
 	override init(signingDataWrapper: SigningDataWrapper, mainOptions: SigningMainDataWrapper) {
-		self.toggleOptions = feather.toggleOptions(signingDataWrapper: signingDataWrapper)
+		self.toggleOptions = mantou.toggleOptions(signingDataWrapper: signingDataWrapper)
 		super.init(signingDataWrapper: signingDataWrapper, mainOptions: mainOptions)
 	}
 	
