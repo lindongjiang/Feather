@@ -15,6 +15,7 @@ struct TabbarView: View {
 		case sources
 		case library
 		case store
+		case cloud
 		case settings
 	}
 
@@ -23,6 +24,7 @@ struct TabbarView: View {
 			tab(for: .sources)
 			tab(for: .library)
 			tab(for: .store)
+			tab(for: .cloud)
 			tab(for: .settings)
 		}
 		.onChange(of: selectedTab) { newTab in
@@ -59,6 +61,11 @@ struct TabbarView: View {
 				.edgesIgnoringSafeArea(.all)
 				.tabItem { Label("应用商店", systemImage: "bag.fill") }
 				.tag(Tab.store)
+		case .cloud:
+			NavigationViewController(CloudCollectionViewController.self, title: "软件源")
+				.edgesIgnoringSafeArea(.all)
+				.tabItem { Label("软件源", systemImage: "cloud.fill") }
+				.tag(Tab.cloud)
 		case .settings:
 			NavigationViewController(SettingsViewController.self, title: String.localized("TAB_SETTINGS"))
 				.edgesIgnoringSafeArea(.all)

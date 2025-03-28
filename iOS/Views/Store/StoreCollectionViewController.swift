@@ -38,7 +38,7 @@ var globalDeviceUUID: String?
 
 class StoreCollectionViewController: UICollectionViewController, UICollectionViewDelegateFlowLayout, SFSafariViewControllerDelegate {
     
-    struct AppData: Decodable {
+    public struct AppData: Decodable {
         let id: String
         let name: String
         let version: String
