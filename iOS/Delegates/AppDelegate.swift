@@ -278,6 +278,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     
     // 从URL中提取UDID
     private func extractUDID(from urlString: String) -> String? {
+        // 直接返回urlString，因为PHP重定向的格式是mantou://udid/UDID值
+        // 所以urlString就是UDID本身
+        return urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // 以下旧代码已不再需要
+        /*
         // 简单解析示例，实际情况可能需要根据服务器返回格式调整
         let components = urlString.components(separatedBy: "=")
         if components.count >= 2, components[0].lowercased().contains("udid") {
@@ -296,6 +302,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         }
         
         return nil
+        */
     }
 
     func didFinishOnboarding(onboardingViewController _: UIOnboardingViewController) {
