@@ -11,6 +11,9 @@ import ZIPFoundation
 import UIKit
 import CoreData
 
+// 确保Archive类型可用于错误处理
+typealias Archive = ZIPFoundation.Archive
+
 class AppDownload: NSObject {
 	let progress = Progress(totalUnitCount: 100)
 	var dldelegate: DownloadDelegate?
@@ -84,47 +87,95 @@ class AppDownload: NSObject {
 		let fileManager = FileManager.default
 
 		if !fileManager.fileExists(atPath: fileURL.path) {
-			completion(nil, NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "File does not exist"]))
+			completion(nil, NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "文件不存在"]))
 			return
 		}
 
 		do {
-			try fileManager.unzipItem(at: fileURL, to: destinationURL, progress: progress)
+			// 创建一个专门的进度监控器
+			let unzipProgress = Progress(totalUnitCount: 100)
 			
-			if progress.isCancelled {
+			// 使用安全的错误处理方式进行解压
+			do {
+				try fileManager.unzipItem(at: fileURL, to: destinationURL, progress: unzipProgress)
+			} catch let zipError as Archive.ArchiveError where zipError._code == 5 {
+				// 特殊处理取消操作错误(错误代码5)
+				Debug.shared.log(message: "解压操作被取消", type: .info)
+				try? fileManager.removeItem(at: destinationURL)
+				cancelDownload()
+				completion(nil, NSError(domain: "", code: 1, userInfo: [NSLocalizedDescriptionKey: "解压操作被取消"]))
+				return
+			} catch {
+				// 处理其他解压错误
+				Debug.shared.log(message: "解压失败: \(error.localizedDescription)", type: .error)
+				try? fileManager.removeItem(at: destinationURL)
+				completion(nil, error)
+				return
+			}
+			
+			// 检查进度是否被取消
+			if unzipProgress.isCancelled || progress.isCancelled {
 				if fileManager.fileExists(atPath: destinationURL.path) {
 					try? fileManager.removeItem(at: destinationURL)
 				}
 				cancelDownload()
-				completion(nil, NSError(domain: "", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unzip operation was cancelled"]))
+				completion(nil, NSError(domain: "", code: 1, userInfo: [NSLocalizedDescriptionKey: "操作被取消"]))
 				return
 			}
 
-			try fileManager.removeItem(at: fileURL)
+			// 尝试删除原始IPA文件
+			do {
+				try fileManager.removeItem(at: fileURL)
+			} catch {
+				Debug.shared.log(message: "无法删除原始IPA文件: \(error.localizedDescription)", type: .warning)
+				// 继续处理，这不是关键错误
+			}
 			
+			// 安全处理Payload文件夹
 			let payloadURL = destinationURL.appendingPathComponent("Payload")
-			let contents = try fileManager.contentsOfDirectory(at: payloadURL, includingPropertiesForKeys: nil, options: [])
+			if !fileManager.fileExists(atPath: payloadURL.path) {
+				Debug.shared.log(message: "Payload文件夹不存在", type: .error)
+				completion(nil, NSError(domain: "", code: 2, userInfo: [NSLocalizedDescriptionKey: "解压后未找到Payload文件夹"]))
+				return
+			}
 			
-			if let appDirectory = contents.first(where: { $0.pathExtension == "app" }) {
-				let sourceURL = appDirectory
-				let targetURL = destinationURL.appendingPathComponent(sourceURL.lastPathComponent)
-				try fileManager.moveItem(at: sourceURL, to: targetURL)
-				try fileManager.removeItem(at: destinationURL.appendingPathComponent("Payload"))
+			do {
+				let contents = try fileManager.contentsOfDirectory(at: payloadURL, includingPropertiesForKeys: nil, options: [])
 				
-				let codeSignatureDirectory = targetURL.appendingPathComponent("_CodeSignature")
-				if fileManager.fileExists(atPath: codeSignatureDirectory.path) {
-					try fileManager.removeItem(at: codeSignatureDirectory)
-					Debug.shared.log(message: "Removed _CodeSignature directory")
+				if let appDirectory = contents.first(where: { $0.pathExtension == "app" }) {
+					let sourceURL = appDirectory
+					let targetURL = destinationURL.appendingPathComponent(sourceURL.lastPathComponent)
+					
+					// 如果目标已存在，先删除
+					if fileManager.fileExists(atPath: targetURL.path) {
+						try fileManager.removeItem(at: targetURL)
+					}
+					
+					// 移动app目录
+					try fileManager.moveItem(at: sourceURL, to: targetURL)
+					
+					// 删除Payload文件夹
+					try fileManager.removeItem(at: payloadURL)
+					
+					// 删除签名信息
+					let codeSignatureDirectory = targetURL.appendingPathComponent("_CodeSignature")
+					if fileManager.fileExists(atPath: codeSignatureDirectory.path) {
+						try fileManager.removeItem(at: codeSignatureDirectory)
+						Debug.shared.log(message: "已删除_CodeSignature目录")
+					}
+					
+					completion(targetURL.path, nil)
+				} else {
+					Debug.shared.log(message: "在Payload中未找到.app目录", type: .error)
+					completion(nil, NSError(domain: "", code: 3, userInfo: [NSLocalizedDescriptionKey: "在Payload中未找到.app目录"]))
 				}
-				
-				
-				completion(targetURL.path, nil)
-			} else {
-				completion(nil, NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "No .app directory found in Payload"]))
+			} catch {
+				Debug.shared.log(message: "处理应用目录时出错: \(error.localizedDescription)", type: .error)
+				completion(nil, error)
 			}
 			
 		} catch {
-			Debug.shared.log(message: "\(error)")
+			Debug.shared.log(message: "解压过程发生错误: \(error)", type: .error)
 			if fileManager.fileExists(atPath: destinationURL.path) {
 				try? fileManager.removeItem(at: destinationURL)
 			}
@@ -227,14 +278,25 @@ func handleIPAFile(destinationURL: URL, uuid: String, dl: AppDownload) throws {
 			newUrl = resultUrl
 			
 			guard let validNewUrl = newUrl else {
-				functionError = HandleIPAFileError.importFailed("No URL returned from import.")
+				functionError = HandleIPAFileError.importFailed("导入未返回有效URL")
 				semaphore.signal()
 				return
 			}
 			
 			dl.extractCompressedBundle(packageURL: validNewUrl.path) { bundle, error in
 				if let error = error {
-					functionError = HandleIPAFileError.extractionFailed(error.localizedDescription)
+					// 检查是否为取消操作错误
+					let errorDescription = error.localizedDescription
+					if errorDescription.contains("cancelledOperation") || 
+                       errorDescription.contains("取消") || 
+                       errorDescription.contains("cancelled") {
+						functionError = HandleIPAFileError.extractionFailed("操作已取消")
+					} else if errorDescription.contains("ZIPFoundation.Archive.ArchiveError") {
+						// 特殊处理ZIP错误
+						functionError = HandleIPAFileError.extractionFailed("解压缩文件时出错: \(errorDescription)")
+					} else {
+						functionError = HandleIPAFileError.extractionFailed(errorDescription)
+					}
 					semaphore.signal()
 					return
 				}
@@ -242,7 +304,7 @@ func handleIPAFile(destinationURL: URL, uuid: String, dl: AppDownload) throws {
 				targetBundle = bundle
 				
 				guard let validTargetBundle = targetBundle else {
-					functionError = HandleIPAFileError.extractionFailed("No bundle returned from extraction.")
+					functionError = HandleIPAFileError.extractionFailed("解压缩后未返回有效应用目录")
 					semaphore.signal()
 					return
 				}
@@ -258,7 +320,16 @@ func handleIPAFile(destinationURL: URL, uuid: String, dl: AppDownload) throws {
 		}
 	}
 	
-	semaphore.wait()
+	// 添加超时处理，避免无限等待
+	let result = semaphore.wait(timeout: .now() + 300) // 5分钟超时
+	
+	if result == .timedOut {
+		// 处理超时情况
+		DispatchQueue.main.async {
+			Debug.shared.log(message: "操作超时", type: .error)
+		}
+		throw HandleIPAFileError.extractionFailed("操作超时，请重试")
+	}
 	
 	if let error = functionError {
 		DispatchQueue.main.async {
@@ -267,7 +338,7 @@ func handleIPAFile(destinationURL: URL, uuid: String, dl: AppDownload) throws {
 		throw error
 	} else {
 		DispatchQueue.main.async {
-			Debug.shared.log(message: "Done!", type: .success)
+			Debug.shared.log(message: "完成！", type: .success)
 			NotificationCenter.default.post(name: Notification.Name("lfetch"), object: nil)
 		}
 	}
