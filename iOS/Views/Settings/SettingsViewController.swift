@@ -11,10 +11,12 @@ import Nuke
 import SwiftUI
 
 class SettingsViewController: FRSTableViewController {
+	// 社交链接数据
+	var socialLinks: [String: String] = [:]
+	var socialLinkKeys: [String] = []
+	
 	let aboutSection = [
-		String.localized("SETTINGS_VIEW_CONTROLLER_CELL_ABOUT", arguments: "Mantou"),
-		String.localized("SETTINGS_VIEW_CONTROLLER_CELL_SUBMIT_FEEDBACK"),
-		String.localized("SETTINGS_VIEW_CONTROLLER_CELL_GITHUB")
+		String.localized("SETTINGS_VIEW_CONTROLLER_CELL_ABOUT", arguments: "Mantou")
 	]
 
 	let displaySection = [
@@ -46,8 +48,12 @@ class SettingsViewController: FRSTableViewController {
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		
+		// 加载社交链接数据
+		loadSocialLinks()
+		
 		tableData = {
 			return [
+				socialLinkKeys,
 				aboutSection,
 				displaySection,
 				certificateSection,
@@ -60,7 +66,7 @@ class SettingsViewController: FRSTableViewController {
 		
 		sectionTitles =
 		[
-			"",
+			"社区链接",
 			"",
 			"",
 			"",
@@ -69,16 +75,36 @@ class SettingsViewController: FRSTableViewController {
 			"",
 		]
 		ensureTableDataHasSections()
-		seeIfDonateShouldAppear()
 		setupNavigation()
 	}
 	
-	fileprivate func seeIfDonateShouldAppear() {
-		if !Preferences.beta {
-			let donateSection = ["Donate"]
-			tableData.insert(donateSection, at: 0)
-			sectionTitles.insert("", at: 0)
+	private func loadSocialLinks() {
+		guard let url = URL(string: "https://uni.cloudmantoub.online/mantou.json") else { return }
+		
+		let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+			guard let self = self, 
+				  let data = data,
+				  error == nil else {
+				Debug.shared.log(message: "Error fetching social links: \(error?.localizedDescription ?? "Unknown error")")
+				return
+			}
+			
+			do {
+				if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+				   let links = json["social_links"] as? [String: String] {
+					DispatchQueue.main.async {
+						self.socialLinks = links
+						self.socialLinkKeys = Array(links.keys)
+						self.tableData[0] = self.socialLinkKeys
+						self.tableView.reloadData()
+					}
+				}
+			} catch {
+				Debug.shared.log(message: "Error parsing social links: \(error.localizedDescription)")
+			}
 		}
+		
+		task.resume()
 	}
 	
 	override func viewWillAppear(_ animated: Bool) {
@@ -93,14 +119,12 @@ class SettingsViewController: FRSTableViewController {
 
 extension SettingsViewController {
 	override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-		if Preferences.beta && section == 0 {
-			return String.localized("SETTINGS_VIEW_CONTROLLER_SECTION_FOOTER_ISSUES")
-		} else if !Preferences.beta && section == 1 {
-			return String.localized("SETTINGS_VIEW_CONTROLLER_SECTION_FOOTER_ISSUES")
+		if section == 0 {
+			return "社区交流平台"
 		}
 		
 		switch section {
-		case sectionTitles.count - 1: return "Mantou \(AppDelegate().logAppVersionInfo()) • iOS \(UIDevice.current.systemVersion)"
+		case sectionTitles.count - 1: return "本项目给予github开源项目Feather • SideStore 二开 • Mantou \(AppDelegate().logAppVersionInfo()) • iOS \(UIDevice.current.systemVersion)"
 		default:
 			return nil
 		}
@@ -115,17 +139,17 @@ extension SettingsViewController {
 		let cellText = tableData[indexPath.section][indexPath.row]
 		cell.textLabel?.text = cellText
 		
+		// 社交链接部分
+		if indexPath.section == 0 {
+			cell.textLabel?.textColor = .tintColor
+			cell.setAccessoryIcon(with: "link")
+			cell.selectionStyle = .default
+			return cell
+		}
+		
 		switch cellText {
-		case "Donate":
-			cell = DonationTableViewCell(style: .default, reuseIdentifier: "D")
-			cell.selectionStyle = .none
-			
 		case String.localized("SETTINGS_VIEW_CONTROLLER_CELL_ABOUT", arguments: "Mantou"):
 			cell.setAccessoryIcon(with: "info.circle")
-			cell.selectionStyle = .default
-		case String.localized("SETTINGS_VIEW_CONTROLLER_CELL_SUBMIT_FEEDBACK"), String.localized("SETTINGS_VIEW_CONTROLLER_CELL_GITHUB"):
-			cell.textLabel?.textColor = .tintColor
-			cell.setAccessoryIcon(with: "safari")
 			cell.selectionStyle = .default
 			
 		case String.localized("SETTINGS_VIEW_CONTROLLER_CELL_DISPLAY"):
@@ -181,22 +205,20 @@ extension SettingsViewController {
 
 	override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
 		let itemTapped = tableData[indexPath.section][indexPath.row]
+		
+		// 处理社交链接点击
+		if indexPath.section == 0, let linkURL = socialLinks[itemTapped] {
+			if let url = URL(string: linkURL) {
+				UIApplication.shared.open(url, options: [:], completionHandler: nil)
+			}
+			tableView.deselectRow(at: indexPath, animated: true)
+			return
+		}
+		
 		switch itemTapped {
 		case String.localized("SETTINGS_VIEW_CONTROLLER_CELL_ABOUT", arguments: "Mantou"):
 			let l = AboutViewController()
 			navigationController?.pushViewController(l, animated: true)
-		case String.localized("SETTINGS_VIEW_CONTROLLER_CELL_GITHUB"):
-			guard let url = URL(string: "https://github.com/khcrysalis/Feather") else {
-				Debug.shared.log(message: "Invalid URL")
-				return
-			}
-			UIApplication.shared.open(url, options: [:], completionHandler: nil)
-		case String.localized("SETTINGS_VIEW_CONTROLLER_CELL_SUBMIT_FEEDBACK"):
-			guard let url = URL(string: "https://github.com/khcrysalis/Feather/issues") else {
-				Debug.shared.log(message: "Invalid URL")
-				return
-			}
-			UIApplication.shared.open(url, options: [:], completionHandler: nil)
 			
 		case String.localized("SETTINGS_VIEW_CONTROLLER_CELL_DISPLAY"):
 			let l = DisplayViewController()

@@ -281,7 +281,7 @@
 
 // Footers
 "SETTINGS_VIEW_CONTROLLER_SECTION_FOOTER_ISSUES" = "如果 Feather 出现任何问题，请通过 GitHub 存储库报告。提交问题时，请务必提交任何日志。";
-"SETTINGS_VIEW_CONTROLLER_SECTION_FOOTER_SERVER_LIMITATIONS" = "由于条件限制，本地服务器证书需要定期重新更新，以保证 Feather 本地安装功能的正常运行，请点击此按钮获取最新文件。";
+"SETTINGS_VIEW_CONTROLLER_SECTION_FOOTER_SERVER_LIMITATIONS" = "由于条件限制，本地服务器证书需要定期重新更新，以保证 Mantou 本地安装功能的正常运行，请点击此按钮获取最新文件。";
 "SETTINGS_VIEW_CONTROLLER_SECTION_FOOTER_DEFAULT_SERVER" = "默认服务器为 %@";
 
 "SETTINGS_VIEW_CONTROLLER_TITLE" = "服务器设置";

@@ -7,197 +7,126 @@
 //
 
 import UIKit
-import MachO
+import WebKit
 
-class AboutViewController: FRSTableViewController {
-	var credits: [CreditsPerson] = []
-	var creditsSponsors: [CreditsPerson] = []
-	var fileNames: [String] = []
-	
-	private let sourceGET = SourceGET()
+class AboutViewController: UIViewController, WKNavigationDelegate {
+	private var webView: WKWebView!
+	private var activityIndicator: UIActivityIndicatorView!
 	
 	override func viewDidLoad() {
 		super.viewDidLoad()
-		
-		tableData = [
-			["Header"],
-			[],
-			["", "Thanks"], // Don't translate this
-			[]
-		]
-		
-		sectionTitles = [
-			"",
-			String.localized("ABOUT_VIEW_CONTROLLER_SECTION_TITLE_CREDITS"),
-			String.localized("ABOUT_VIEW_CONTROLLER_SECTION_TITLE_SPONSORS"),
-			String.localized("ABOUT_VIEW_CONTROLLER_SECTION_TITLE_ACKNOWLEDGEMENTS")
-		]
-		
-		setupCreditsSection()
 		setupNavigation()
+		setupWebView()
+		setupActivityIndicator()
+		loadWebContent()
 	}
 	
 	fileprivate func setupNavigation() {
-		self.title = "About"
-		self.navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .action, target: self, action: #selector(shareButtonTapped))
+		self.title = "致谢"
 	}
 	
-	fileprivate func setupCreditsSection() {
-		if let mdFiles = try? FileManager.default.contentsOfDirectory(atPath: Bundle.main.bundlePath).filter({ $0.hasSuffix(".md") }) {
-			fileNames = mdFiles
-			tableData[3] = fileNames
-		}
+	private func setupWebView() {
+		// 配置WebView，启用移动端适配
+		let configuration = WKWebViewConfiguration()
+		configuration.applicationNameForUserAgent = "Mantou/Mobile"
 		
-		let creditsURL = URL(string: "https://raw.githubusercontent.com/khcrysalis/project-credits/refs/heads/main/feather/credits.json")!
-		let sponsorsURL = URL(string: "https://raw.githubusercontent.com/khcrysalis/project-credits/refs/heads/main/sponsors/credits.json")!
+		webView = WKWebView(frame: view.bounds, configuration: configuration)
+		webView.navigationDelegate = self
+		webView.translatesAutoresizingMaskIntoConstraints = false
+		webView.allowsBackForwardNavigationGestures = true
 		
-		getURL(url: creditsURL) { result in
-			switch result {
-			case .success(let credits):
-				DispatchQueue.main.async {
-					self.credits = credits
-					self.tableData[1] = credits.map { $0.name ?? "" }
-					self.tableView.reloadData()
-				}
-			case .failure(_):
-				Debug.shared.log(message: "Error fetching credits")
-			}
-		}
+		// 设置内容模式，确保正确缩放
+		webView.scrollView.contentInsetAdjustmentBehavior = .automatic
 		
-		getURL(url: sponsorsURL) { result in
-			switch result {
-			case .success(let sponsors):
-				DispatchQueue.main.async {
-					self.creditsSponsors = sponsors
-					self.tableView.reloadData()
-				}
-			case .failure(_):
-				Debug.shared.log(message: "Error fetching sponsors")
-			}
-		}
+		view.addSubview(webView)
+		
+		// 设置约束，使WebView填满整个视图
+		NSLayoutConstraint.activate([
+			webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+			webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+			webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+			webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+		])
 	}
 	
-	private func getURL(url: URL, completion: @escaping (Result<[CreditsPerson], Error>) -> Void) {
-		sourceGET.downloadURL(from: url) { result in
-			switch result {
-			case .success((let data, _)):
-				switch SourceGET().parsec(data: data) {
-				case .success(let sourceData):
-					completion(.success(sourceData))
-				case .failure(let error):
-					Debug.shared.log(message: "Error parsing data: \(error)")
-					completion(.failure(error))
-				}
-			case .failure(let error):
-				Debug.shared.log(message: "Error downloading data: \(error)")
-				completion(.failure(error))
-			}
-		}
+	private func setupActivityIndicator() {
+		activityIndicator = UIActivityIndicatorView(style: .medium)
+		activityIndicator.hidesWhenStopped = true
+		activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+		view.addSubview(activityIndicator)
+		
+		// 将活动指示器放置在视图中央
+		NSLayoutConstraint.activate([
+			activityIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+			activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+		])
 	}
-
 	
-	@objc func shareButtonTapped() {
-		let shareText = "Mantou - https://github.com/khcrysalis/feather"
-		let activityViewController = UIActivityViewController(activityItems: [shareText], applicationActivities: nil)
-		
-		if let popoverController = activityViewController.popoverPresentationController {
-			popoverController.sourceView = self.view
-			popoverController.sourceRect = self.view.bounds
-			popoverController.permittedArrowDirections = []
+	private func loadWebContent() {
+		guard let url = URL(string: "https://uni.cloudmantoub.online/create.html") else {
+			showError(message: "无效的URL")
+			return
 		}
 		
-		present(activityViewController, animated: true, completion: nil)
+		// 开始加载前显示活动指示器
+		activityIndicator.startAnimating()
+		
+		let request = URLRequest(url: url)
+		webView.load(request)
 	}
-}
-
-extension AboutViewController {
-	override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-		let reuseIdentifier = "Cell"
-		let cell = UITableViewCell(style: .value1, reuseIdentifier: reuseIdentifier)
-		cell.accessoryType = .none
-		cell.selectionStyle = .none
+	
+	// MARK: - WKNavigationDelegate
+	
+	func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+		// 页面加载完成，隐藏活动指示器
+		activityIndicator.stopAnimating()
 		
-		let cellText = tableData[indexPath.section][indexPath.row]
+		// 注入CSS使页面适配移动端
+		let cssString = """
+			body {
+				font-size: 16px !important;
+				padding: 12px !important;
+				word-wrap: break-word !important;
+			}
+			img {
+				max-width: 100% !important;
+				height: auto !important;
+			}
+			pre, code {
+				white-space: pre-wrap !important;
+				overflow-x: auto !important;
+			}
+		"""
 		
-		switch indexPath.section {
-		case 0:
-			let cell = HeaderTableViewCell()
-			let appName = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? ""
-			let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-			let buildVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
-			let versionString = "Version \(appVersion) (Build \(buildVersion))"
-			cell.backgroundColor = .clear
-			cell.selectionStyle = .none
-			cell.configure(withTitle: appName, versionString: versionString)
-			return cell
-		case 1:
+		let jsString = """
+			var style = document.createElement('style');
+			style.innerHTML = '\(cssString)';
+			document.head.appendChild(style);
 			
-			let personCellIdentifier = "PersonCell"
-			let personCell = tableView.dequeueReusableCell(withIdentifier: personCellIdentifier) as? PersonCell ?? PersonCell(style: .default, reuseIdentifier: personCellIdentifier)
-			
-			let credits = self.credits[indexPath.row]
-			
-			personCell.configure(with: credits)
-			if let arrowImage = UIImage(systemName: "arrow.up.forward")?.withTintColor(UIColor.tertiaryLabel, renderingMode: .alwaysOriginal) {
-				personCell.accessoryView = UIImageView(image: arrowImage)
-			}
-			return personCell
-		case 2:
-			if cellText != "Thanks" {
-				let personCellIdentifier = "BatchPersonCell"
-				let personCell = tableView.dequeueReusableCell(withIdentifier: personCellIdentifier) as? BatchPersonCell ?? BatchPersonCell(style: .default, reuseIdentifier: personCellIdentifier)
-							
-				personCell.configure(with: creditsSponsors)
-				return personCell
-			} else {
-				// Don't translate this
-				cell.textLabel?.text = "💙 This couldn't of been done without my sponsors!"
-				cell.textLabel?.textColor = .secondaryLabel
-				cell.textLabel?.numberOfLines = 0
-				return cell
-			}
-		case 3:
-			let cell = UITableViewCell(style: .default, reuseIdentifier: reuseIdentifier)
-			cell.textLabel?.text = cellText
-			cell.accessoryType = .disclosureIndicator
-			return cell
-		default:
-			break
-		}
-
+			// 设置视口
+			var meta = document.createElement('meta');
+			meta.name = 'viewport';
+			meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+			document.head.appendChild(meta);
+		"""
 		
-		return cell
+		webView.evaluateJavaScript(jsString, completionHandler: nil)
 	}
 	
-	override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-		let selectedFileName = tableData[indexPath.section][indexPath.row]
-		switch indexPath.section {
-		case 1:
-			let developer =  self.credits[indexPath.row]
-			if let socialLink = URL(string: "https://github.com/\(developer.github)") {
-				UIApplication.shared.open(socialLink, options: [:], completionHandler: nil)
-			}
-		case 3:
-			if let fileContents = loadFileContents(fileName: selectedFileName) {
-				let textViewController = LicenseViewController()
-				textViewController.textContent = fileContents
-				textViewController.titleText = selectedFileName
-				navigationController?.pushViewController(textViewController, animated: true)
-			}
-		default:
-			break
-		}
-		
-		tableView.deselectRow(at: indexPath, animated: true)
+	func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+		activityIndicator.stopAnimating()
+		showError(message: "加载失败: \(error.localizedDescription)")
 	}
-}
-
-extension AboutViewController {
-	private func loadFileContents(fileName: String) -> String? {
-		guard let filePath = Bundle.main.path(forResource: fileName, ofType: ""),
-			  let fileContents = try? String(contentsOfFile: filePath) else {
-			return nil
-		}
-		return fileContents
+	
+	func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+		activityIndicator.stopAnimating()
+		showError(message: "加载失败: \(error.localizedDescription)")
+	}
+	
+	// 显示错误消息
+	private func showError(message: String) {
+		let alert = UIAlertController(title: "错误", message: message, preferredStyle: .alert)
+		alert.addAction(UIAlertAction(title: "确定", style: .default))
+		present(alert, animated: true)
 	}
 }
