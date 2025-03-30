@@ -419,3 +419,7 @@
 "LOGS_VIEW_SECTION_TITLE_COPY" = "Copy Logs";
 "LOGS_VIEW_SUCCESS_DESCRIPTION" = "Log contents have been copied to clipboard.";
 "LOGS_VIEW_FAIL_DESCRIPTION" = "Failed to copy log contents.";
+
+// MARK: - LibraryViewController
+"LIBRARY_VIEW_CONTROLLER_SEGMENT_SIGNED_APPS" = "Signed Apps";
+"LIBRARY_VIEW_CONTROLLER_SEGMENT_DOWNLOADED_APPS" = "Downloaded Apps";

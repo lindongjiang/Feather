@@ -13,6 +13,7 @@ import Nuke
 import SwiftUI
 import UIKit
 import UIOnboarding
+import Darwin // 添加Darwin导入，用于open函数和O_EVTONLY常量
 
 var downloadTaskManager = DownloadTaskManager.shared
 class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControllerDelegate {
@@ -350,6 +351,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         if let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
             let sourcesURL = documentsURL.appendingPathComponent("Apps")
             let certsURL = documentsURL.appendingPathComponent("Certificates")
+            let importedIPAsURL = documentsURL.appendingPathComponent("ImportedIPAs", isDirectory: true)
 
             if !fileManager.fileExists(atPath: sourcesURL.path) {
                 do { try! fileManager.createDirectory(at: sourcesURL, withIntermediateDirectories: true, attributes: nil) }
@@ -357,6 +359,82 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
             if !fileManager.fileExists(atPath: certsURL.path) {
                 do { try! fileManager.createDirectory(at: certsURL, withIntermediateDirectories: true, attributes: nil) }
             }
+            if !fileManager.fileExists(atPath: importedIPAsURL.path) {
+                do { try! fileManager.createDirectory(at: importedIPAsURL, withIntermediateDirectories: true, attributes: nil) }
+            }
+            
+            // 设置文件监听器
+            setupImportedIPAsDirectoryMonitor(at: importedIPAsURL)
+        }
+    }
+
+    // 监听ImportedIPAs目录的变化，自动导入新文件
+    private var directoryMonitor: DispatchSourceFileSystemObject?
+    
+    private func setupImportedIPAsDirectoryMonitor(at url: URL) {
+        let fileDescriptor = open(url.path, O_EVTONLY)
+        if fileDescriptor < 0 {
+            return
+        }
+        
+        // 创建目录变化的监听器
+        directoryMonitor = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: .write,
+            queue: DispatchQueue.global()
+        )
+        
+        // 当目录内容发生变化时处理
+        directoryMonitor?.setEventHandler { [weak self] in
+            self?.checkForNewIPAFiles(in: url)
+        }
+        
+        directoryMonitor?.setCancelHandler {
+            close(fileDescriptor)
+        }
+        
+        directoryMonitor?.resume()
+        
+        // 初始检查一次目录
+        checkForNewIPAFiles(in: url)
+    }
+    
+    private func checkForNewIPAFiles(in directoryURL: URL) {
+        do {
+            let fileManager = FileManager.default
+            let fileURLs = try fileManager.contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: nil)
+            
+            // 过滤出IPA文件
+            let ipaFiles = fileURLs.filter { $0.pathExtension.lowercased() == "ipa" }
+            
+            for ipaURL in ipaFiles {
+                let uuid = UUID().uuidString
+                
+                // 将IPA文件复制到临时目录
+                let tempDirectory = FileManager.default.temporaryDirectory
+                let destinationURL = tempDirectory.appendingPathComponent(ipaURL.lastPathComponent)
+                
+                do {
+                    if fileManager.fileExists(atPath: destinationURL.path) {
+                        try fileManager.removeItem(at: destinationURL)
+                    }
+                    
+                    try fileManager.copyItem(at: ipaURL, to: destinationURL)
+                    
+                    // 使用已有的处理逻辑导入IPA
+                    let dl = AppDownload()
+                    try handleIPAFile(destinationURL: destinationURL, uuid: uuid, dl: dl)
+                    
+                    // 导入成功后删除原文件，避免重复导入
+                    try fileManager.removeItem(at: ipaURL)
+                    
+                    Debug.shared.log(message: "自动导入IPA文件成功: \(ipaURL.lastPathComponent)", type: .success)
+                } catch {
+                    Debug.shared.log(message: "自动导入IPA文件失败: \(error.localizedDescription)", type: .error)
+                }
+            }
+        } catch {
+            Debug.shared.log(message: "检查ImportedIPAs目录失败: \(error.localizedDescription)", type: .error)
         }
     }
 

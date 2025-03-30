@@ -7,6 +7,7 @@
 
 import UIKit
 import SafariServices
+import CoreData
 
 class ListCollectionViewController: UIViewController {
     
@@ -54,6 +55,12 @@ class ListCollectionViewController: UIViewController {
         setupUI()
         configureNavBar()
         loadData()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleIPAImport(_:)),
+            name: NSNotification.Name("ImportIPAFile"),
+            object: nil
+        )
     }
     
     // MARK: - UI设置
@@ -111,6 +118,12 @@ class ListCollectionViewController: UIViewController {
         // 添加右上角筛选按钮
         let filterButton = UIBarButtonItem(image: UIImage(systemName: "line.3.horizontal.decrease.circle.fill"), style: .plain, target: self, action: #selector(toggleFilterView))
         navigationItem.rightBarButtonItem = filterButton
+        
+        // 添加下载链接按钮
+        let downloadLinkButton = UIBarButtonItem(image: UIImage(systemName: "link.badge.plus"), style: .plain, target: self, action: #selector(showURLInputDialogAction))
+        
+        // 合并导航栏按钮
+        navigationItem.rightBarButtonItems = [filterButton, downloadLinkButton]
     }
     
     // 创建顶部公告视图
@@ -516,7 +529,8 @@ class ListCollectionViewController: UIViewController {
                 
                 // 恢复筛选按钮
                 let filterButton = UIBarButtonItem(image: UIImage(systemName: "line.3.horizontal.decrease.circle.fill"), style: .plain, target: self, action: #selector(self?.toggleFilterView))
-                self?.navigationItem.rightBarButtonItem = filterButton
+                let downloadLinkButton = UIBarButtonItem(image: UIImage(systemName: "link.badge.plus"), style: .plain, target: self, action: #selector(self?.showURLInputDialogAction))
+                self?.navigationItem.rightBarButtonItems = [filterButton, downloadLinkButton]
                 
                 if let error = error {
                     self?.showError(message: "网络错误: \(error.localizedDescription)")
@@ -531,9 +545,34 @@ class ListCollectionViewController: UIViewController {
                 }
                 
                 do {
-                    // 解析JSON数据
-                    let decoder = JSONDecoder()
-                    let storeData = try decoder.decode(StoreAppStoreData.self, from: data)
+                    // 使用JSONDecoder解析数据，而不是JSONSerialization
+                    if let jsonString = String(data: data, encoding: .utf8),
+                       let jsonData = jsonString.data(using: .utf8) {
+                        let decoder = JSONDecoder()
+                        if let storeData = try? decoder.decode(StoreAppStoreData.self, from: jsonData) {
+                            self?.appStoreData = storeData
+                            self?.apps = storeData.apps
+                            
+                            // 设置顶部公告
+                            if !storeData.message.isEmpty {
+                                self?.setupAnnouncementView(withMessage: storeData.message)
+                            }
+                            
+                            self?.collectionView.reloadData()
+                            self?.setupEmptyStateView()
+                            return
+                        }
+                    }
+                    
+                    // 备用解码方法：JSONSerialization + 自定义decode
+                    guard let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        throw NSError(domain: "数据格式错误", code: -1, userInfo: nil)
+                    }
+                    
+                    // 使用安全的静态解码方法
+                    guard let storeData = StoreAppStoreData.decode(from: jsonObject) else {
+                        throw NSError(domain: "数据解析失败", code: -2, userInfo: nil)
+                    }
                     
                     self?.appStoreData = storeData
                     self?.apps = storeData.apps
@@ -558,101 +597,366 @@ class ListCollectionViewController: UIViewController {
         loadData()
     }
     
-    // 修改下载逻辑，保存到IPA库
-    private func downloadApp(_ app: StoreApp) {
-        if app.isLocked {
-            // 应用被锁定，显示解锁界面
-            showUnlockDialog()
-        } else if let downloadURL = URL(string: app.downloadURL) {
-            // 显示下载确认对话框
-            let alert = UIAlertController(
-                title: "下载应用",
-                message: "确定要下载\(app.name) (v\(app.version))吗？下载后将自动保存至IPA库。",
-                preferredStyle: .alert
-            )
-            
-            alert.addAction(UIAlertAction(title: "取消", style: .cancel, handler: nil))
-            
-            alert.addAction(UIAlertAction(title: "下载", style: .default) { [weak self] _ in
-                // 显示下载进度
-                let progressAlert = UIAlertController(title: "正在下载", message: "请稍候...", preferredStyle: .alert)
+    // 通用下载方法，处理各种链接类型
+    func downloadIPAFromURL(urlString: String) {
+        // 显示加载指示器
+        let loadingAlert = UIAlertController(title: nil, message: "正在解析链接...", preferredStyle: .alert)
+        let loadingIndicator = UIActivityIndicatorView(frame: CGRect(x: 10, y: 5, width: 50, height: 50))
+        loadingIndicator.hidesWhenStopped = true
+        loadingIndicator.style = .medium
+        loadingIndicator.startAnimating()
+        loadingAlert.view.addSubview(loadingIndicator)
+        present(loadingAlert, animated: true)
+        
+        // 创建一个会处理重定向的URL会话配置
+        let config = URLSessionConfiguration.default
+        let session = URLSession(configuration: config)
+        
+        guard let url = URL(string: urlString) else {
+            loadingAlert.dismiss(animated: true) {
+                self.showError(message: "无效的URL")
+            }
+            return
+        }
+        
+        // 创建一个请求，我们会跟踪重定向
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD" // 先用HEAD请求检查文件类型和大小
+        
+        session.dataTask(with: request) { [weak self] _, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    loadingAlert.dismiss(animated: true) {
+                        self?.showError(message: "链接检查失败: \(error.localizedDescription)")
+                    }
+                    return
+                }
                 
-                let progressView = UIProgressView(progressViewStyle: .default)
-                progressView.frame = CGRect(x: 10, y: 70, width: 250, height: 2)
-                progressView.progress = 0.0
-                progressAlert.view.addSubview(progressView)
+                // 获取最终URL（处理重定向后）
+                guard let httpResponse = response as? HTTPURLResponse,
+                      let finalURL = response?.url else {
+                    loadingAlert.dismiss(animated: true) {
+                        self?.showError(message: "无法获取文件信息")
+                    }
+                    return
+                }
                 
-                self?.present(progressAlert, animated: true)
+                // 检查内容类型和文件名
+                let contentType = httpResponse.allHeaderFields["Content-Type"] as? String ?? ""
+                let filename = self?.extractFilename(from: httpResponse) ?? "下载文件.ipa"
+                let isIPA = filename.hasSuffix(".ipa") || contentType.contains("application/octet-stream")
                 
-                // 创建下载任务
-                let downloadTask = URLSession.shared.downloadTask(with: downloadURL) { url, response, error in
-                    DispatchQueue.main.async {
-                        progressAlert.dismiss(animated: true) {
-                            if let error = error {
-                                self?.showError(message: "下载失败: \(error.localizedDescription)")
-                                return
-                            }
-                            
-                            guard let tempURL = url else {
-                                self?.showError(message: "下载失败: 无法获取文件")
-                                return
-                            }
-                            
-                            do {
-                                // 创建IPA库目录
-                                let fileManager = FileManager.default
-                                let documentsURL = try fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                                let ipaLibraryURL = documentsURL.appendingPathComponent("IPALibrary", isDirectory: true)
-                                
-                                if !fileManager.fileExists(atPath: ipaLibraryURL.path) {
-                                    try fileManager.createDirectory(at: ipaLibraryURL, withIntermediateDirectories: true)
+                if !isIPA {
+                    loadingAlert.message = "正在分析页面..."
+                    
+                    // 如果不是直接IPA文件，尝试解析页面内容
+                    self?.analyzeWebPage(url: finalURL, session: session) { result in
+                        DispatchQueue.main.async {
+                            loadingAlert.dismiss(animated: true) {
+                                switch result {
+                                case .success(let downloadURL):
+                                    self?.startIPADownload(from: downloadURL, filename: filename)
+                                case .failure(let error):
+                                    self?.showError(message: "链接解析失败: \(error.localizedDescription)")
                                 }
-                                
-                                // 创建文件名（使用应用名称和版本）
-                                let filename = "\(app.name)_v\(app.version).ipa"
-                                let fileURL = ipaLibraryURL.appendingPathComponent(filename)
-                                
-                                // 如果文件已存在，先删除
-                                if fileManager.fileExists(atPath: fileURL.path) {
-                                    try fileManager.removeItem(at: fileURL)
-                                }
-                                
-                                // 将下载的文件移动到IPA库
-                                try fileManager.moveItem(at: tempURL, to: fileURL)
-                                
-                                // 成功保存
-                                self?.showMessage(title: "下载成功", message: "\(app.name) 已下载并保存到IPA库")
-                                
-                                // 通知IPA库更新
-                                NotificationCenter.default.post(name: NSNotification.Name("IPALibraryUpdated"), object: nil)
-                                
-                            } catch {
-                                self?.showError(message: "保存失败: \(error.localizedDescription)")
                             }
                         }
                     }
-                }
-                
-                // 观察下载进度
-                let observation = downloadTask.progress.observe(\.fractionCompleted) { progress, _ in
-                    DispatchQueue.main.async {
-                        progressView.progress = Float(progress.fractionCompleted)
-                        progressAlert.message = "下载中...(\(Int(progress.fractionCompleted * 100))%)"
+                } else {
+                    // 直接是IPA文件，开始下载
+                    loadingAlert.dismiss(animated: true) {
+                        self?.startIPADownload(from: finalURL, filename: filename)
                     }
                 }
-                
-                // 开始下载
-                downloadTask.resume()
-                
-                // 在适当的时候，可以释放观察者
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    observation.invalidate()
+            }
+        }.resume()
+    }
+    
+    // 从HTTP响应中提取文件名
+    private func extractFilename(from response: HTTPURLResponse) -> String? {
+        // 从Content-Disposition头中获取文件名
+        if let disposition = response.allHeaderFields["Content-Disposition"] as? String {
+            let components = disposition.components(separatedBy: "filename=")
+            if components.count > 1 {
+                let filename = components[1].replacingOccurrences(of: "\"", with: "")
+                if filename.hasSuffix(".ipa") {
+                    return filename
                 }
-            })
+            }
+        }
+        
+        // 从URL路径中获取文件名
+        let urlPath = response.url?.path ?? ""
+        let components = urlPath.components(separatedBy: "/")
+        if let lastComponent = components.last, lastComponent.hasSuffix(".ipa") {
+            return lastComponent
+        }
+        
+        // 默认文件名
+        return "download_\(Int(Date().timeIntervalSince1970)).ipa"
+    }
+    
+    // 分析网页内容，寻找IPA下载链接
+    private func analyzeWebPage(url: URL, session: URLSession, completion: @escaping (Result<URL, Error>) -> Void) {
+        session.dataTask(with: url) { data, response, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
             
-            present(alert, animated: true)
-        } else {
-            showError(message: "无效的下载链接")
+            guard let data = data, let html = String(data: data, encoding: .utf8) else {
+                let error = NSError(domain: "无法解析页面内容", code: -2, userInfo: nil)
+                completion(.failure(error))
+                return
+            }
+            
+            // 查找可能的下载链接
+            let possibleLinks = self.extractDownloadLinks(from: html, baseURL: url)
+            
+            if let ipaLink = possibleLinks.first {
+                completion(.success(ipaLink))
+            } else {
+                // 如果未能找到标准下载链接，尝试处理特殊网站
+                self.handleSpecialSite(url: url, html: html) { result in
+                    switch result {
+                    case .success(let downloadURL):
+                        completion(.success(downloadURL))
+                    case .failure(_):
+                        // 如果特殊网站处理也失败，返回原始错误
+                        let error = NSError(domain: "未找到IPA下载链接", code: -3, userInfo: nil)
+                        completion(.failure(error))
+                    }
+                }
+            }
+        }.resume()
+    }
+    
+    // 从HTML中提取可能的IPA下载链接
+    private func extractDownloadLinks(from html: String, baseURL: URL) -> [URL] {
+        var links: [URL] = []
+        
+        // 1. 查找常见的下载按钮或链接
+        let downloadPatterns = [
+            // 直接IPA文件链接
+            "href=[\"'](.*?\\.ipa)[\"']",
+            // 下载关键词链接
+            "href=[\"'](.*?download.*?)[\"']",
+            "href=[\"'](.*?/download/.*?)[\"']",
+            // 数据属性链接
+            "data-url=[\"'](.*?)[\"']",
+            "url: [\"'](.*?)[\"']",
+            // JavaScript链接
+            "window.location.href=[\"'](.*?)[\"']",
+            "location.href=[\"'](.*?)[\"']",
+            // 更多常见链接模式
+            "href=[\"'](.*?/file/.*?)[\"']",
+            "href=[\"'](.*?get\\?.*?)[\"']",
+            "src=[\"'](.*?\\.ipa)[\"']",
+            "content=[\"'](.*?\\.ipa)[\"']",
+            // MIME类型相关
+            "href=[\"'](.*?)[\"'].*?type=[\"']application/octet-stream[\"']",
+            "href=[\"'](.*?)[\"'].*?type=[\"']application/x-itunes-ipa[\"']",
+            // plist文件 (可能指向IPA)
+            "href=[\"'](.*?\\.plist)[\"']"
+        ]
+        
+        for pattern in downloadPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                let range = NSRange(html.startIndex..<html.endIndex, in: html)
+                let matches = regex.matches(in: html, options: [], range: range)
+                
+                for match in matches {
+                    if let range = Range(match.range(at: 1), in: html) {
+                        let urlString = String(html[range])
+                        if let url = URL(string: urlString, relativeTo: baseURL) {
+                            links.append(url)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 2. 寻找可能的JSON数据中的下载链接
+        if let jsonDataRange = html.range(of: "\\{[^\\{\\}]*\"download\"[^\\{\\}]*\\}", options: .regularExpression) {
+            let jsonData = String(html[jsonDataRange])
+            if let urlMatch = jsonData.range(of: "\"url\"\\s*:\\s*\"([^\"]+)\"", options: .regularExpression) {
+                // 提取URL部分
+                let matchedText = jsonData[urlMatch]
+                if let urlValueRange = matchedText.range(of: "\"([^\"]+)\"", options: .regularExpression) {
+                    // 去掉引号
+                    let urlWithQuotes = String(matchedText[urlValueRange])
+                    let urlString = urlWithQuotes.replacingOccurrences(of: "\"", with: "")
+                    if let url = URL(string: urlString, relativeTo: baseURL) {
+                        links.append(url)
+                    }
+                }
+            }
+        }
+        
+        // 3. 特别处理蓝奏云等特定网站
+        if baseURL.host?.contains("lanzou") == true || baseURL.host?.contains("123") == true {
+            // 特别处理蓝奏云
+            if let ajaxDataRange = html.range(of: "var ajaxdata = '(.+?)'", options: .regularExpression),
+               let _ = html[ajaxDataRange].split(separator: "'").dropFirst().first {
+                
+                let domain = "\(baseURL.scheme ?? "https")://\(baseURL.host ?? "www.123912.com")"
+                if let ajaxURL = URL(string: "\(domain)/ajaxm.php") {
+                    links.append(ajaxURL)
+                }
+            }
+        }
+        
+        return links
+    }
+    
+    // 开始下载IPA文件
+    private func startIPADownload(from url: URL, filename: String) {
+        // 显示下载确认对话框
+        let alert = UIAlertController(
+            title: "下载IPA",
+            message: "确定要下载\(filename)吗？下载后将自动保存至IPA库。",
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel, handler: nil))
+        
+        alert.addAction(UIAlertAction(title: "下载", style: .default) { [weak self] _ in
+            // 显示下载进度
+            let progressAlert = UIAlertController(title: "正在下载", message: "请稍候...", preferredStyle: .alert)
+            
+            let progressView = UIProgressView(progressViewStyle: .default)
+            progressView.frame = CGRect(x: 10, y: 70, width: 250, height: 2)
+            progressView.progress = 0.0
+            progressAlert.view.addSubview(progressView)
+            
+            self?.present(progressAlert, animated: true)
+            
+            // 创建下载任务
+            let downloadTask = URLSession.shared.downloadTask(with: url) { tempURL, response, error in
+                DispatchQueue.main.async {
+                    progressAlert.dismiss(animated: true) {
+                        if let error = error {
+                            self?.showError(message: "下载失败: \(error.localizedDescription)")
+                            return
+                        }
+                        
+                        guard let tempURL = tempURL else {
+                            self?.showError(message: "下载失败: 无法获取文件")
+                            return
+                        }
+                        
+                        do {
+                            // 创建IPA库目录
+                            let fileManager = FileManager.default
+                            let documentsURL = try fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+                            let ipaLibraryURL = documentsURL.appendingPathComponent("IPALibrary", isDirectory: true)
+                            
+                            if !fileManager.fileExists(atPath: ipaLibraryURL.path) {
+                                try fileManager.createDirectory(at: ipaLibraryURL, withIntermediateDirectories: true)
+                            }
+                            
+                            // 创建文件名（使用应用名称和版本）
+                            let cleanFilename = filename.replacingOccurrences(of: " ", with: "_").replacingOccurrences(of: "/", with: "_")
+                            let fileURL = ipaLibraryURL.appendingPathComponent(cleanFilename)
+                            
+                            // 如果文件已存在，先删除
+                            if fileManager.fileExists(atPath: fileURL.path) {
+                                try fileManager.removeItem(at: fileURL)
+                            }
+                            
+                            // 将下载的文件移动到IPA库
+                            try fileManager.moveItem(at: tempURL, to: fileURL)
+                            
+                            // 成功保存后，自动触发导入流程
+                            self?.importIPAFile(at: fileURL)
+                            
+                            // 通知IPA库更新
+                            NotificationCenter.default.post(name: NSNotification.Name("IPALibraryUpdated"), object: nil)
+                            
+                        } catch {
+                            self?.showError(message: "保存失败: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+            
+            // 观察下载进度
+            let observation = downloadTask.progress.observe(\.fractionCompleted) { progress, _ in
+                DispatchQueue.main.async {
+                    progressView.progress = Float(progress.fractionCompleted)
+                    progressAlert.message = "下载中...(\(Int(progress.fractionCompleted * 100))%)"
+                }
+            }
+            
+            // 开始下载
+            downloadTask.resume()
+            
+            // 在适当的时候，可以释放观察者
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                observation.invalidate()
+            }
+        })
+        
+        present(alert, animated: true)
+    }
+    
+    // 修改importIPAFile方法，直接调用AppDelegate中的自动导入流程
+    private func importIPAFile(at fileURL: URL) {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            showError(message: "无法找到IPA文件")
+            return
+        }
+        
+        // 显示加载提示
+        let loadingAlert = UIAlertController(title: nil, message: "正在导入IPA...", preferredStyle: .alert)
+        let loadingIndicator = UIActivityIndicatorView(frame: CGRect(x: 10, y: 5, width: 50, height: 50))
+        loadingIndicator.hidesWhenStopped = true
+        loadingIndicator.style = .medium
+        loadingIndicator.startAnimating()
+        loadingAlert.view.addSubview(loadingIndicator)
+        present(loadingAlert, animated: true)
+        
+        // 在后台线程中处理导入
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                // 使用随机UUID避免文件名冲突
+                let uuid = UUID().uuidString
+                let dl = AppDownload()
+                
+                // 使用全局处理函数进行IPA导入
+                try handleIPAFile(destinationURL: fileURL, uuid: uuid, dl: dl)
+                
+                DispatchQueue.main.async {
+                    // 关闭加载提示
+                    loadingAlert.dismiss(animated: true) {
+                        // 查找新导入的应用
+                        if let downloadedApp = CoreDataManager.shared.getDatedDownloadedApps().first(where: { $0.uuid == uuid }) {
+                            // 发送通知给LibraryViewController处理
+                            NotificationCenter.default.post(
+                                name: Notification.Name("InstallDownloadedApp"),
+                                object: nil,
+                                userInfo: ["downloadedApp": downloadedApp]
+                            )
+                            
+                            // 显示成功消息
+                            self?.showMessage(title: "导入成功", message: "IPA文件已导入并准备安装")
+                            
+                            // 切换到Library标签页
+                            if let tabBarController = self?.tabBarController {
+                                tabBarController.selectedIndex = 1
+                            }
+                        } else {
+                            self?.showMessage(title: "导入完成", message: "IPA文件已导入到应用库")
+                        }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    loadingAlert.dismiss(animated: true) {
+                        self?.showError(message: "导入IPA文件失败: \(error.localizedDescription)")
+                    }
+                }
+            }
         }
     }
     
@@ -736,9 +1040,15 @@ class ListCollectionViewController: UIViewController {
                     }
                     
                     do {
-                        // 解析解锁响应
-                        let decoder = JSONDecoder()
-                        let unlockResponse = try decoder.decode(StoreUnlockResponse.self, from: data)
+                        // 使用JSONSerialization解析数据
+                        guard let jsonObject = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let codeValue = jsonObject["code"] as? Int,
+                              let msgValue = jsonObject["msg"] as? String else {
+                            throw NSError(domain: "无效的响应格式", code: -1, userInfo: nil)
+                        }
+                        
+                        // 创建响应对象
+                        let unlockResponse = StoreUnlockResponse(code: codeValue, msg: msgValue)
                         
                         // 判断解锁结果
                         if unlockResponse.code == 0 {
@@ -773,9 +1083,11 @@ class ListCollectionViewController: UIViewController {
             })
         } else {
             alertController.addAction(UIAlertAction(title: "下载", style: .default) { [weak self] _ in
-                if let url = URL(string: app.downloadURL) {
-                    let safariVC = SFSafariViewController(url: url)
-                    self?.present(safariVC, animated: true)
+                // 确保下载URL不为空
+                if !app.downloadURL.isEmpty {
+                    self?.downloadIPAFromURL(urlString: app.downloadURL)
+                } else {
+                    self?.showError(message: "下载链接无效")
                 }
             })
         }
@@ -813,6 +1125,228 @@ class ListCollectionViewController: UIViewController {
             completion?()
         })
         present(alert, animated: true)
+    }
+    
+    // 处理蓝奏云等特殊网站
+    private func handleSpecialSite(url: URL, html: String, completion: @escaping (Result<URL, Error>) -> Void) {
+        // 获取域名信息，用于识别网站类型
+        let host = url.host?.lowercased() ?? ""
+        
+        // 蓝奏云特殊处理
+        if host.contains("lanzou") || host.contains("lanzoux") || host.contains("lanzoui") {
+            // 解析蓝奏云页面
+            if let range = html.range(of: "var ajaxdata = '(.+?)'", options: .regularExpression) {
+                let ajaxData = String(html[range].dropFirst(14).dropLast(1))
+                
+                // 构建API请求参数
+                let domain = "\(url.scheme ?? "https")://\(url.host ?? "")"
+                let apiURL = "\(domain)/ajaxm.php"
+                
+                var request = URLRequest(url: URL(string: apiURL)!)
+                request.httpMethod = "POST"
+                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                request.httpBody = "action=downprocess&sign=\(ajaxData)&ves=1".data(using: .utf8)
+                
+                // 获取真实下载链接
+                URLSession.shared.dataTask(with: request) { data, response, error in
+                    if let error = error {
+                        completion(.failure(error))
+                        return
+                    }
+                    
+                    guard let data = data,
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let downloadURLString = json["url"] as? String,
+                          let downloadURL = URL(string: downloadURLString) else {
+                        let error = NSError(domain: "解析下载链接失败", code: -3, userInfo: nil)
+                        completion(.failure(error))
+                        return
+                    }
+                    
+                    completion(.success(downloadURL))
+                }.resume()
+                return
+            }
+        }
+        
+        // 123云盘特殊处理
+        else if host.contains("123pan") || host.contains("123") {
+            // 查找包含文件信息的JSON数据
+            let pattern = "window\\.locals\\s*=\\s*\\{(.+?)\\};"
+            if let range = html.range(of: pattern, options: .regularExpression) {
+                let jsonStr = String(html[range])
+                
+                // 提取文件ID和其他必要信息
+                var fileId: String?
+                var shareKey: String?
+                
+                // 寻找ItemId
+                if let idMatch = jsonStr.range(of: "\"ItemId\":\\s*\"([^\"]+)\"", options: .regularExpression) {
+                    let matchedIdText = jsonStr[idMatch]
+                    // 使用正则表达式提取双引号中间的内容
+                    if let valueRange = matchedIdText.range(of: "\"([^\"]+)\"", options: .regularExpression, range: matchedIdText.range(of: ":")!.upperBound..<matchedIdText.endIndex) {
+                        let idWithQuotes = String(matchedIdText[valueRange])
+                        fileId = idWithQuotes.replacingOccurrences(of: "\"", with: "")
+                    }
+                }
+                
+                // 寻找ShareKey
+                if let keyMatch = jsonStr.range(of: "\"ShareKey\":\\s*\"([^\"]+)\"", options: .regularExpression) {
+                    let matchedKeyText = jsonStr[keyMatch]
+                    // 使用正则表达式提取双引号中间的内容
+                    if let valueRange = matchedKeyText.range(of: "\"([^\"]+)\"", options: .regularExpression, range: matchedKeyText.range(of: ":")!.upperBound..<matchedKeyText.endIndex) {
+                        let keyWithQuotes = String(matchedKeyText[valueRange])
+                        shareKey = keyWithQuotes.replacingOccurrences(of: "\"", with: "")
+                    }
+                }
+                
+                if let fileId = fileId, let shareKey = shareKey {
+                    // 构建API请求
+                    let apiURL = "https://www.123pan.com/api/share/download/file"
+                    var request = URLRequest(url: URL(string: apiURL)!)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    
+                    let requestBody: [String: Any] = [
+                        "fileId": fileId,
+                        "shareKey": shareKey,
+                        "isFolder": false
+                    ]
+                    
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: requestBody) {
+                        request.httpBody = jsonData
+                        
+                        URLSession.shared.dataTask(with: request) { data, response, error in
+                            if let error = error {
+                                completion(.failure(error))
+                                return
+                            }
+                            
+                            guard let data = data,
+                                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                                  let results = json["data"] as? [String: Any],
+                                  let downloadURLString = results["downloadUrl"] as? String,
+                                  let downloadURL = URL(string: downloadURLString) else {
+                                let error = NSError(domain: "解析123云盘链接失败", code: -4, userInfo: nil)
+                                completion(.failure(error))
+                                return
+                            }
+                            
+                            completion(.success(downloadURL))
+                        }.resume()
+                        return
+                    }
+                }
+            }
+        }
+        
+        // 天翼云盘特殊处理
+        else if host.contains("cloud.189") {
+            // 查找包含文件信息的参数
+            if let accessTokenMatch = html.range(of: "accessToken\\s*=\\s*'([^']+)'", options: .regularExpression) {
+                let matchedTokenText = html[accessTokenMatch]
+                var accessToken = ""
+                
+                // 提取单引号中的内容
+                if let valueRange = matchedTokenText.range(of: "'([^']+)'", options: .regularExpression) {
+                    let tokenWithQuotes = String(matchedTokenText[valueRange])
+                    accessToken = tokenWithQuotes.replacingOccurrences(of: "'", with: "")
+                }
+                
+                // 从URL中提取文件ID
+                let urlString = url.absoluteString
+                if let fileIdMatch = urlString.range(of: "fileId=([^&]+)", options: .regularExpression) {
+                    let matchedIdText = urlString[fileIdMatch]
+                    var fileId = ""
+                    
+                    // 提取等号后面的内容
+                    if let valueRange = matchedIdText.range(of: "=([^&]+)", options: .regularExpression) {
+                        let fileIdWithEquals = String(matchedIdText[valueRange])
+                        fileId = fileIdWithEquals.replacingOccurrences(of: "=", with: "")
+                        
+                        // 构建下载API请求
+                        let apiURL = "https://cloud.189.cn/api/open/file/getFileDownloadUrl.action"
+                        var components = URLComponents(string: apiURL)
+                        components?.queryItems = [
+                            URLQueryItem(name: "fileId", value: fileId),
+                            URLQueryItem(name: "accessToken", value: accessToken)
+                        ]
+                        
+                        if let requestURL = components?.url {
+                            URLSession.shared.dataTask(with: requestURL) { data, response, error in
+                                if let error = error {
+                                    completion(.failure(error))
+                                    return
+                                }
+                                
+                                guard let data = data,
+                                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                                      let downloadURLString = json["fileDownloadUrl"] as? String,
+                                      let downloadURL = URL(string: downloadURLString) else {
+                                    let error = NSError(domain: "解析天翼云盘链接失败", code: -5, userInfo: nil)
+                                    completion(.failure(error))
+                                    return
+                                }
+                                
+                                completion(.success(downloadURL))
+                            }.resume()
+                            return
+                        }
+                    }
+                }
+            }
+        }
+        
+        // TODO: 可以添加更多特殊网站的处理逻辑
+        
+        // 如果没有特殊处理，返回失败
+        completion(.failure(NSError(domain: "不支持的网站", code: -5, userInfo: nil)))
+    }
+    
+    private func showURLInputDialog() {
+        let alertController = UIAlertController(
+            title: "输入下载链接",
+            message: "请输入IPA文件的下载链接，支持直接链接或网盘分享链接",
+            preferredStyle: .alert
+        )
+        
+        alertController.addTextField { textField in
+            textField.placeholder = "https://example.com/app.ipa"
+            textField.autocapitalizationType = .none
+            textField.keyboardType = .URL
+            textField.clearButtonMode = .whileEditing
+        }
+        
+        let cancelAction = UIAlertAction(title: "取消", style: .cancel)
+        let downloadAction = UIAlertAction(title: "下载", style: .default) { [weak self, weak alertController] _ in
+            guard let link = alertController?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !link.isEmpty else {
+                return
+            }
+            
+            self?.downloadIPAFromURL(urlString: link)
+        }
+        
+        alertController.addAction(cancelAction)
+        alertController.addAction(downloadAction)
+        
+        present(alertController, animated: true)
+    }
+    
+    @objc private func showURLInputDialogAction() {
+        showURLInputDialog()
+    }
+    
+    // 添加处理方法
+    @objc private func handleIPAImport(_ notification: Notification) {
+        if let userInfo = notification.userInfo,
+           let fileURL = userInfo["fileURL"] as? URL {
+            // 执行实际的导入逻辑
+            // ...
+            
+            // 发送通知告知IPA库刷新
+            NotificationCenter.default.post(name: NSNotification.Name("ReloadIPALibrary"), object: nil)
+        }
     }
 }
 
@@ -960,14 +1494,8 @@ class AppCollectionViewCell: UICollectionViewCell {
         lockIconView.isHidden = !app.isLocked
         
         // 加载图标（如果有）
-        if let iconURLString = app.iconURL, let iconURL = URL(string: iconURLString) {
-            URLSession.shared.dataTask(with: iconURL) { [weak self] data, _, _ in
-                if let data = data, let image = UIImage(data: data) {
-                    DispatchQueue.main.async {
-                        self?.iconImageView.image = image
-                    }
-                }
-            }.resume()
+        if let iconURLString = app.iconURL {
+            iconImageView.safeLoadImage(from: iconURLString, placeholder: UIImage(systemName: "square.fill"))
         } else {
             // 使用默认图标
             iconImageView.image = UIImage(systemName: "square.fill")
@@ -998,8 +1526,8 @@ extension String {
     }
 }
 
-// 软件源数据模型
-struct StoreAppStoreData: Codable {
+// 软件源数据模型 - 删除NSSecureCoding，仅使用Codable
+class StoreAppStoreData: Codable {
     let name: String
     let message: String
     let identifier: String
@@ -1008,9 +1536,52 @@ struct StoreAppStoreData: Codable {
     let payURL: String
     let unlockURL: String
     let apps: [StoreApp]
+    
+    // 标准初始化方法
+    init(name: String, message: String, identifier: String, sourceURL: String?, sourceicon: String?, payURL: String, unlockURL: String, apps: [StoreApp]) {
+        self.name = name
+        self.message = message
+        self.identifier = identifier
+        self.sourceURL = sourceURL
+        self.sourceicon = sourceicon
+        self.payURL = payURL
+        self.unlockURL = unlockURL
+        self.apps = apps
+    }
+    
+    // 自定义解码方法 - 用于JSON解析
+    static func decode(from jsonObject: [String: Any]) -> StoreAppStoreData? {
+        guard let name = jsonObject["name"] as? String,
+              let message = jsonObject["message"] as? String,
+              let identifier = jsonObject["identifier"] as? String,
+              let payURL = jsonObject["payURL"] as? String,
+              let unlockURL = jsonObject["unlockURL"] as? String,
+              let appsArray = jsonObject["apps"] as? [[String: Any]] else {
+            return nil
+        }
+        
+        // 构建应用数组
+        var apps: [StoreApp] = []
+        for appDict in appsArray {
+            if let app = StoreApp.decode(from: appDict) {
+                apps.append(app)
+            }
+        }
+        
+        return StoreAppStoreData(
+            name: name,
+            message: message,
+            identifier: identifier,
+            sourceURL: jsonObject["sourceURL"] as? String,
+            sourceicon: jsonObject["sourceicon"] as? String,
+            payURL: payURL,
+            unlockURL: unlockURL,
+            apps: apps
+        )
+    }
 }
 
-struct StoreApp: Codable {
+class StoreApp: Codable {
     let name: String
     let type: Int
     let version: String
@@ -1026,11 +1597,83 @@ struct StoreApp: Codable {
     var isLocked: Bool {
         return lock == "1"
     }
+    
+    // 标准初始化方法
+    init(name: String, type: Int, version: String, versionDate: String, versionDescription: String, 
+         lock: String, downloadURL: String, isLanZouCloud: String, iconURL: String?, tintColor: String?, size: String) {
+        self.name = name
+        self.type = type
+        self.version = version
+        self.versionDate = versionDate
+        self.versionDescription = versionDescription
+        self.lock = lock
+        self.downloadURL = downloadURL
+        self.isLanZouCloud = isLanZouCloud
+        self.iconURL = iconURL
+        self.tintColor = tintColor
+        self.size = size
+    }
+    
+    // 自定义解码方法 - 用于JSON解析
+    static func decode(from dictionary: [String: Any]) -> StoreApp? {
+        guard let name = dictionary["name"] as? String,
+              let typeValue = dictionary["type"] as? Int,
+              let version = dictionary["version"] as? String,
+              let versionDate = dictionary["versionDate"] as? String,
+              let versionDescription = dictionary["versionDescription"] as? String,
+              let lock = dictionary["lock"] as? String,
+              let downloadURL = dictionary["downloadURL"] as? String,
+              let isLanZouCloud = dictionary["isLanZouCloud"] as? String,
+              let size = dictionary["size"] as? String else {
+            return nil
+        }
+        
+        return StoreApp(
+            name: name,
+            type: typeValue,
+            version: version,
+            versionDate: versionDate,
+            versionDescription: versionDescription,
+            lock: lock,
+            downloadURL: downloadURL,
+            isLanZouCloud: isLanZouCloud,
+            iconURL: dictionary["iconURL"] as? String,
+            tintColor: dictionary["tintColor"] as? String,
+            size: size
+        )
+    }
 }
 
 // 解锁响应模型
 struct StoreUnlockResponse: Codable {
     let code: Int
     let msg: String
+}
+
+extension UIImageView {
+    // 安全加载图片，避免使用NSObject解码
+    func safeLoadImage(from urlString: String, placeholder: UIImage? = nil) {
+        // 先设置占位图像
+        if let placeholder = placeholder {
+            self.image = placeholder
+        }
+        
+        guard let url = URL(string: urlString) else { return }
+        
+        // 使用URLSession直接加载图像数据，避免使用不安全的NSObject解码
+        let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            guard let self = self, let data = data, error == nil else {
+                return
+            }
+            
+            // 在主线程中更新UI
+            DispatchQueue.main.async {
+                if let image = UIImage(data: data) {
+                    self.image = image
+                }
+            }
+        }
+        task.resume()
+    }
 }
 

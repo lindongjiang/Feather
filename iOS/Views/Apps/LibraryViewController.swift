@@ -23,6 +23,10 @@ class LibraryViewController: UITableViewController {
 	var popupVC: PopupViewController!
 	var loaderAlert: UIAlertController?
 	
+	// 添加分段控制器和当前选择的分段索引
+	private var segmentedControl: UISegmentedControl!
+	private var selectedSegmentIndex = 0 // 0: 已签名，1: 已下载
+	
 	init() { super.init(style: .grouped) }
 	required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 	
@@ -32,6 +36,11 @@ class LibraryViewController: UITableViewController {
 		setupSearchController()
 		fetchSources()
 		loaderAlert = presentLoader()
+		
+		// 确保表格滚动到顶部并刷新界面
+		if tableView.numberOfRows(inSection: 0) > 0 {
+			tableView.scrollToRow(at: IndexPath(row: 0, section: 0), at: .top, animated: false)
+		}
 	}
 	
 	override func viewWillAppear(_ animated: Bool) {
@@ -84,6 +93,61 @@ class LibraryViewController: UITableViewController {
 	fileprivate func setupNavigation() {
 		self.navigationController?.navigationBar.prefersLargeTitles = true
 		self.title = String.localized("TAB_LIBRARY")
+		
+		// 添加导入按钮到右上角
+		let importButton = UIBarButtonItem(
+			title: String.localized("LIBRARY_VIEW_CONTROLLER_SECTION_BUTTON_IMPORT"),
+			style: .plain,
+			target: self,
+			action: #selector(startImporting)
+		)
+		navigationItem.rightBarButtonItem = importButton
+		
+		// 添加分段控制器作为标题视图
+		setupSegmentedControl()
+	}
+	
+	private func setupSegmentedControl() {
+		// 创建分段控制器
+		segmentedControl = UISegmentedControl(items: [
+			"已签名的App",
+			"已下载的App"
+		])
+		segmentedControl.selectedSegmentIndex = selectedSegmentIndex
+		segmentedControl.addTarget(self, action: #selector(segmentChanged(_:)), for: .valueChanged)
+		
+		// 设置分段控制器样式
+		segmentedControl.backgroundColor = .secondarySystemBackground
+		segmentedControl.selectedSegmentTintColor = .tintColor
+		
+		// 设置字体颜色
+		let normalTextAttributes: [NSAttributedString.Key: Any] = [
+			.foregroundColor: UIColor.label
+		]
+		let selectedTextAttributes: [NSAttributedString.Key: Any] = [
+			.foregroundColor: UIColor.white
+		]
+		segmentedControl.setTitleTextAttributes(normalTextAttributes, for: .normal)
+		segmentedControl.setTitleTextAttributes(selectedTextAttributes, for: .selected)
+		
+		// 将分段控制器添加为导航栏下方的视图
+		let containerView = UIView(frame: CGRect(x: 0, y: 0, width: view.frame.width - 32, height: 40))
+		containerView.addSubview(segmentedControl)
+		segmentedControl.translatesAutoresizingMaskIntoConstraints = false
+		NSLayoutConstraint.activate([
+			segmentedControl.topAnchor.constraint(equalTo: containerView.topAnchor),
+			segmentedControl.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+			segmentedControl.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+			segmentedControl.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
+		])
+		
+		// 添加到导航栏下方
+		navigationItem.titleView = containerView
+	}
+	
+	@objc private func segmentChanged(_ sender: UISegmentedControl) {
+		selectedSegmentIndex = sender.selectedSegmentIndex
+		tableView.reloadData()
 	}
 	
 	private func handleAppUpdate(for signedApp: SignedApps) {
@@ -229,12 +293,12 @@ class LibraryViewController: UITableViewController {
 }
 
 extension LibraryViewController {
-	override func numberOfSections(in tableView: UITableView) -> Int { return 2 }
+	override func numberOfSections(in tableView: UITableView) -> Int { return 1 }
 	override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-		switch section {
-		case 0:
+		switch selectedSegmentIndex {
+		case 0: // 已签名的App
 			return isFiltering ? filteredSignedApps.count : signedApps?.count ?? 0
-		case 1:
+		case 1: // 已下载的App
 			return isFiltering ? filteredDownloadedApps.count : downloadedApps?.count ?? 0
 		default:
 			return 0
@@ -242,23 +306,18 @@ extension LibraryViewController {
 	}
 	
 	override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-		switch section {
-		case 0:
+		switch selectedSegmentIndex {
+		case 0: // 已签名的App
 			let headerWithButton = GroupedSectionHeader(
-                title: String.localized("LIBRARY_VIEW_CONTROLLER_SECTION_TITLE_SIGNED_APPS"),
-				subtitle: String.localized("LIBRARY_VIEW_CONTROLLER_SECTION_TITLE_SIGNED_APPS_TOTAL", arguments: String(signedApps?.count ?? 0)),
-                buttonTitle: String.localized("LIBRARY_VIEW_CONTROLLER_SECTION_BUTTON_IMPORT"),
-                buttonAction: {
-				self.startImporting()
-			})
+				title: String.localized("LIBRARY_VIEW_CONTROLLER_SECTION_TITLE_SIGNED_APPS"),
+				subtitle: String.localized("LIBRARY_VIEW_CONTROLLER_SECTION_TITLE_SIGNED_APPS_TOTAL", arguments: String(signedApps?.count ?? 0))
+			)
 			return headerWithButton
-		case 1:
-			
+		case 1: // 已下载的App
 			let headerWithButton = GroupedSectionHeader(
 				title: String.localized("LIBRARY_VIEW_CONTROLLER_SECTION_DOWNLOADED_APPS"),
 				subtitle: String.localized("LIBRARY_VIEW_CONTROLLER_SECTION_TITLE_DOWNLOADED_APPS_TOTAL", arguments: String(downloadedApps?.count ?? 0))
 			)
-			
 			return headerWithButton
 		default:
 			return nil
@@ -270,8 +329,8 @@ extension LibraryViewController {
 		cell.selectionStyle = .default
 		cell.accessoryType = .disclosureIndicator
 		cell.backgroundColor = .clear
-		let source = getApplication(row: indexPath.row, section: indexPath.section)
-		let filePath = getApplicationFilePath(with: source!, row: indexPath.row, section: indexPath.section)
+		let source = getApplication(row: indexPath.row, section: selectedSegmentIndex)
+		let filePath = getApplicationFilePath(with: source!, row: indexPath.row, section: selectedSegmentIndex)
 		
 		
 		if let iconURL = source!.value(forKey: "iconURL") as? String {
@@ -291,12 +350,12 @@ extension LibraryViewController {
 	}
 	
 	override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-		let source = getApplication(row: indexPath.row, section: indexPath.section)
-		let filePath = getApplicationFilePath(with: source!, row: indexPath.row, section: indexPath.section, getuuidonly: true)
-		let filePath2 = getApplicationFilePath(with: source!, row: indexPath.row, section: indexPath.section, getuuidonly: false)
+		let source = getApplication(row: indexPath.row, section: selectedSegmentIndex)
+		let filePath = getApplicationFilePath(with: source!, row: indexPath.row, section: selectedSegmentIndex, getuuidonly: true)
+		let filePath2 = getApplicationFilePath(with: source!, row: indexPath.row, section: selectedSegmentIndex, getuuidonly: false)
 		let appName = "\((source!.value(forKey: "name") as? String ?? ""))"
-		switch indexPath.section {
-		case 0:
+		switch selectedSegmentIndex {
+		case 0: // 已签名的App
 			if FileManager.default.fileExists(atPath: filePath2!.path) {
 				popupVC = PopupViewController()
 				popupVC.modalPresentationStyle = .pageSheet
@@ -419,7 +478,7 @@ extension LibraryViewController {
 			} else {
 				Debug.shared.log(message: "The file has been deleted for this entry, please remove it manually.", type: .critical)
 			}
-		case 1:
+		case 1: // 已下载的App
 			if FileManager.default.fileExists(atPath: filePath2!.path) {
 				popupVC = PopupViewController()
 				popupVC.modalPresentationStyle = .pageSheet
@@ -496,18 +555,18 @@ extension LibraryViewController {
 	}
 	
 	override func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
-		let source = getApplication(row: indexPath.row, section: indexPath.section)
+		let source = getApplication(row: indexPath.row, section: selectedSegmentIndex)
 		
 		let deleteAction = UIContextualAction(style: .destructive, title: String.localized("DELETE")) { (action, view, completionHandler) in
-			switch indexPath.section {
+			switch self.selectedSegmentIndex {
 			case 0:
 				CoreDataManager.shared.deleteAllSignedAppContent(for: source! as! SignedApps)
 				self.signedApps?.remove(at: indexPath.row)
-				self.tableView.reloadSections(IndexSet(integer: 0), with: .automatic)
+				self.tableView.reloadData()
 			case 1:
 				CoreDataManager.shared.deleteAllDownloadedAppContent(for: source! as! DownloadedApps)
 				self.downloadedApps?.remove(at: indexPath.row)
-				self.tableView.reloadSections(IndexSet(integer: 1), with: .automatic)
+				self.tableView.reloadData()
 			default:
 				break
 			}
@@ -522,8 +581,8 @@ extension LibraryViewController {
 	}
 	
 	override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
-		let source = getApplication(row: indexPath.row, section: indexPath.section)
-		let filePath = getApplicationFilePath(with: source!, row: indexPath.row, section: indexPath.section)
+		let source = getApplication(row: indexPath.row, section: selectedSegmentIndex)
+		let filePath = getApplicationFilePath(with: source!, row: indexPath.row, section: selectedSegmentIndex)
 		
 		let configuration = UIContextMenuConfiguration(identifier: nil, actionProvider: { _ in
 			return UIMenu(title: "", image: nil, identifier: nil, options: [], children: [

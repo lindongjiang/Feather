@@ -11,6 +11,8 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>iOS Package Archive</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
@@ -21,6 +23,8 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>Configuration Profile</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
@@ -112,6 +116,10 @@
 	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>需要访问下载文件夹以保存IPA文件</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>需要访问文档文件夹以管理IPA文件</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

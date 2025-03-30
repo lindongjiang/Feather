@@ -13,7 +13,7 @@ import CoreData
 import SwiftUI
 
 extension LibraryViewController: UIDocumentPickerDelegate {
-	func startImporting() {
+	@objc func startImporting() {
 		let actionSheet = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
 		
 		let documentPickerAction = UIAlertAction(title: String.localized("LIBRARY_VIEW_CONTROLLER_IMPORT_ACTION_SHEET_FILE"), style: .default) { [weak self] _ in
