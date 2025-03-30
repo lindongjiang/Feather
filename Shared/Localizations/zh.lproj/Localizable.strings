@@ -75,7 +75,7 @@
 "ONBOARDING_CELL_3_TITLE" = "更多";
 "ONBOARDING_CELL_3_DESCRIPTION" = "AltStore 存储库、导入 IPA、轻松切换证书等。";
 // "Developed by Samara. Made for users who are passionate for sideloading and freedom. Many features included inside. Learn more..."
-"ONBOARDING_FOOTER" = "由 Samara 开发，专为热爱侧载和自由的用户打造，具有多种功能。";
+"ONBOARDING_FOOTER" = "基于 Samara 开发的Feather，和GitHub开源项目：SideStore，专为热爱侧载和自由的用户打造，具有多种功能。";
 "ONBOARDING_FOOTER_LINK" = "了解更多...";
 // Continue button to exit onboarding
 "ONBOARDING_CONTINUE_BUTTON" = "继续";
