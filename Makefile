@@ -1,8 +1,8 @@
 TARGET_CODESIGN = $(shell which ldid)
 
 PLATFORM = iphoneos
-NAME = feather
-SCHEME ?= 'feather (Debug)'
+NAME = mantou
+SCHEME ?= 'mantou'
 RELEASE = Release-iphoneos
 CONFIGURATION = Release
 

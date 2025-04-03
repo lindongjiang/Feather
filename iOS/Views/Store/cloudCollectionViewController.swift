@@ -23,11 +23,15 @@ class CloudCollectionViewController: UIViewController {
     private let cellIdentifier = "SourceCell"
     private var emptyStateView: UIView?
     
+    // 用于在同一个TabBar页面切换的分段控制
+    private let segmentedControl = UISegmentedControl(items: ["网站源", "软件源"])
+    
     // MARK: - 生命周期方法
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
+        setupSegmentedControl()
         configureNavBar()
         loadSavedSources()
     }
@@ -35,6 +39,9 @@ class CloudCollectionViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         loadSavedSources()
+        
+        // 确保选择了"软件源"标签
+        segmentedControl.selectedSegmentIndex = 1
     }
     
     // MARK: - UI设置
@@ -65,6 +72,7 @@ class CloudCollectionViewController: UIViewController {
         collectionView.delegate = self
         collectionView.dataSource = self
         collectionView.alwaysBounceVertical = true
+        collectionView.contentInset = UIEdgeInsets(top: 50, left: 0, bottom: 0, right: 0) // 为分段控制留出空间
         view.addSubview(collectionView)
         
         // 添加下拉刷新控件
@@ -72,6 +80,25 @@ class CloudCollectionViewController: UIViewController {
         refreshControl.tintColor = .systemBlue
         refreshControl.addTarget(self, action: #selector(refreshSources), for: .valueChanged)
         collectionView.refreshControl = refreshControl
+    }
+    
+    private func setupSegmentedControl() {
+        segmentedControl.translatesAutoresizingMaskIntoConstraints = false
+        segmentedControl.selectedSegmentIndex = 1
+        segmentedControl.backgroundColor = .systemBackground
+        segmentedControl.selectedSegmentTintColor = .systemBlue
+        segmentedControl.setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
+        segmentedControl.setTitleTextAttributes([.foregroundColor: UIColor.systemBlue], for: .normal)
+        segmentedControl.addTarget(self, action: #selector(segmentChanged(_:)), for: .valueChanged)
+        
+        view.addSubview(segmentedControl)
+        
+        NSLayoutConstraint.activate([
+            segmentedControl.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            segmentedControl.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            segmentedControl.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            segmentedControl.heightAnchor.constraint(equalToConstant: 34)
+        ])
     }
     
     private func configureNavBar() {
@@ -93,6 +120,20 @@ class CloudCollectionViewController: UIViewController {
         // 添加右上角按钮
         let addButton = UIBarButtonItem(image: UIImage(systemName: "plus.circle.fill"), style: .plain, target: self, action: #selector(addSourceButtonTapped))
         navigationItem.rightBarButtonItem = addButton
+    }
+    
+    // MARK: - 分段控制切换
+    
+    @objc private func segmentChanged(_ sender: UISegmentedControl) {
+        if sender.selectedSegmentIndex == 0 {
+            // 网站源 - 切换到WebcloudCollectionViewController
+            let webcloudVC = WebcloudCollectionViewController()
+            // 保持相同的导航控制器，只替换当前视图控制器
+            navigationController?.setViewControllers([webcloudVC], animated: false)
+        } else {
+            // 软件源 - 当前页面，刷新数据
+            loadSavedSources()
+        }
     }
     
     // 添加空状态视图

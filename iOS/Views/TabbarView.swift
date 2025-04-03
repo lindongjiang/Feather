@@ -62,9 +62,10 @@ struct TabbarView: View {
 				.tabItem { Label("应用商店", systemImage: "bag.fill") }
 				.tag(Tab.store)
 		case .cloud:
-			NavigationViewController(CloudCollectionViewController.self, title: "软件源")
+			// 集成网站源和软件源的页面，默认显示网站源
+			NavigationViewController(WebcloudCollectionViewController.self, title: "资源中心")
 				.edgesIgnoringSafeArea(.all)
-				.tabItem { Label("软件源", systemImage: "cloud.fill") }
+				.tabItem { Label("资源中心", systemImage: "cloud.fill") }
 				.tag(Tab.cloud)
 		case .settings:
 			NavigationViewController(SettingsViewController.self, title: String.localized("TAB_SETTINGS"))
