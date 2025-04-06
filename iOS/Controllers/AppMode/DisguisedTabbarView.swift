@@ -234,12 +234,16 @@ class DisguisedHomeViewController: UIViewController, UICollectionViewDataSource,
             self.collectionView.reloadData()
         } else {
             // 展示壁纸详情
-            let detailVC = DisguisedWallpaperDetailViewController()
             var filteredWallpapers = wallpapers
             if selectedCategory != 0 {
                 let category = categories[selectedCategory]
                 filteredWallpapers = wallpapers.filter { $0.category == category }
             }
+            
+            // 检查数组索引是否有效
+            guard indexPath.item < filteredWallpapers.count else { return }
+            
+            let detailVC = DisguisedWallpaperDetailViewController()
             detailVC.wallpaper = filteredWallpapers[indexPath.item]
             navigationController?.pushViewController(detailVC, animated: true)
         }
@@ -607,19 +611,21 @@ class DevModeManager {
     }
     
     private func activateDevMode() {
-        // 切换到正常模式
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            
-            let alert = UIAlertController(title: "开发者选项", message: "请选择应用模式", preferredStyle: .alert)
-            
-            alert.addAction(UIAlertAction(title: "切换到原始功能", style: .default) { _ in
-                AppModeManager.shared.toggleMode()
-            })
-            
-            alert.addAction(UIAlertAction(title: "保持壁纸模式", style: .cancel))
-            
-            rootVC.present(alert, animated: true)
+        DispatchQueue.main.async {
+            // 切换到正常模式
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = windowScene.windows.first?.rootViewController {
+                
+                let alert = UIAlertController(title: "开发者选项", message: "请选择应用模式", preferredStyle: .alert)
+                
+                alert.addAction(UIAlertAction(title: "切换到原始功能", style: .default) { _ in
+                    AppModeManager.shared.toggleMode()
+                })
+                
+                alert.addAction(UIAlertAction(title: "保持壁纸模式", style: .cancel))
+                
+                rootVC.present(alert, animated: true)
+            }
         }
     }
 } 

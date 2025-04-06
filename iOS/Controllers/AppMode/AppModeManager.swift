@@ -43,11 +43,13 @@ class AppModeManager {
             if oldValue != currentMode {
                 saveConfig()
                 // 通知模式变化
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("AppModeDidChangeNotification"),
-                    object: nil,
-                    userInfo: ["mode": currentMode]
-                )
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("AppModeDidChangeNotification"),
+                        object: nil,
+                        userInfo: ["mode": self.currentMode]
+                    )
+                }
             }
         }
     }
@@ -80,6 +82,35 @@ class AppModeManager {
         }
     }
     
+    // 安全记录日志的方法
+    private func logMessage(_ message: String, type: LogType = .info) {
+        // 尝试动态获取Debug类并调用log方法
+        if let debugClass = NSClassFromString("Debug") as? NSObject.Type,
+           let sharedInstance = debugClass.value(forKey: "shared") as? NSObject {
+            // 创建selector并执行
+            let selector = NSSelectorFromString("log:type:")
+            if sharedInstance.responds(to: selector) {
+                DispatchQueue.main.async {
+                    // 使用performSelector动态调用方法
+                    _ = sharedInstance.perform(selector, with: message, with: NSNumber(value: type.rawValue))
+                }
+            } else {
+                print("[AppMode] \(message) (Debug类存在但不响应log:type:方法)")
+            }
+        } else {
+            print("[AppMode] \(message)")
+        }
+    }
+    
+    // 日志类型枚举
+    enum LogType: Int {
+        case info = 0
+        case success = 1
+        case warning = 2
+        case error = 3
+        case critical = 4
+    }
+    
     // 检查服务器配置
     func checkServerConfiguration(completion: @escaping (Bool) -> Void) {
         // 如果服务器检查被禁用，则直接返回
@@ -98,6 +129,7 @@ class AppModeManager {
         
         // 创建服务器请求
         guard let url = URL(string: config.serverCheckURL) else {
+            logMessage("无效的服务器URL: \(config.serverCheckURL)", type: .error)
             completion(false)
             return
         }
@@ -111,17 +143,32 @@ class AppModeManager {
         components?.queryItems = queryItems
         
         guard let requestURL = components?.url else {
+            logMessage("构建请求URL失败", type: .error)
             completion(false)
             return
         }
         
         // 发起网络请求
         URLSession.shared.dataTask(with: requestURL) { [weak self] data, response, error in
-            guard let self = self,
-                  let data = data,
-                  error == nil,
+            guard let self = self else { 
+                DispatchQueue.main.async {
+                    completion(false)
+                }
+                return 
+            }
+            
+            if let error = error {
+                self.logMessage("服务器请求失败: \(error.localizedDescription)", type: .error)
+                DispatchQueue.main.async {
+                    completion(false)
+                }
+                return
+            }
+            
+            guard let data = data,
                   let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
+                self.logMessage("无效的服务器响应", type: .error)
                 DispatchQueue.main.async {
                     completion(false)
                 }
@@ -143,7 +190,7 @@ class AppModeManager {
                     completion(modeChanged)
                 }
             } catch {
-                Debug.shared.log(message: "解析服务器配置失败：\(error.localizedDescription)", type: .error)
+                self.logMessage("解析服务器配置失败：\(error.localizedDescription)", type: .error)
                 DispatchQueue.main.async {
                     completion(false)
                 }

@@ -23,6 +23,34 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     
     // 在应用启动过程中使用一个加载指示器，同时检查应用模式
     private var loadingViewController: UIViewController?
+    
+    // 安全记录日志的方法
+    private func safeLogMessage(_ message: String, type: LogType = .info) {
+        // 使用正确的方式查找和调用Debug类的log方法
+        if let debug = NSClassFromString("Debug") as? NSObject.Type,
+           let shared = debug.value(forKey: "shared") as? NSObject {
+            // 创建selector
+            let selector = NSSelectorFromString("log:type:")
+            if shared.responds(to: selector) {
+                DispatchQueue.main.async {
+                    _ = shared.perform(selector, with: message, with: NSNumber(value: type.rawValue))
+                }
+            } else {
+                print("[AppDelegate] \(message) (Debug.shared存在但不响应log:type:方法)")
+            }
+        } else {
+            print("[AppDelegate] \(message)")
+        }
+    }
+    
+    // 日志类型枚举
+    enum LogType: Int {
+        case info = 0
+        case success = 1
+        case warning = 2
+        case error = 3
+        case critical = 4
+    }
 
     func application(_: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let userDefaults = UserDefaults.standard
@@ -36,16 +64,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         // 检查是否存储了UDID
         if let udid = userDefaults.string(forKey: "deviceUDID") {
             globalDeviceUUID = udid
-            Debug.shared.log(message: "已加载存储的UDID: \(udid)")
+            safeLogMessage("已加载存储的UDID: \(udid)")
         }
 
-		createSourcesDirectory()
+        createSourcesDirectory()
         addDefaultRepos()
-		giveUserDefaultSSLCerts()
+        giveUserDefaultSSLCerts()
         imagePipline()
         setupLogFile()
         cleanTmp()
 
+        // 使用可选绑定创建window而不是强制解包
         window = UIWindow(frame: UIScreen.main.bounds)
         
         // 先显示加载画面
@@ -61,23 +90,31 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
             Preferences.pPQCheckString = generatedString
         }
 
-        Debug.shared.log(message: "Version: \(UIDevice.current.systemVersion)")
-        Debug.shared.log(message: "Name: \(UIDevice.current.name)")
-        Debug.shared.log(message: "Model: \(UIDevice.current.model)")
-        Debug.shared.log(message: "Mantou Version: \(logAppVersionInfo())\n")
+        // 记录设备信息
+        let systemVersion = UIDevice.current.systemVersion
+        let deviceName = UIDevice.current.name
+        let deviceModel = UIDevice.current.model
+        let appVersion = logAppVersionInfo()
+        
+        safeLogMessage("Version: \(systemVersion)")
+        safeLogMessage("Name: \(deviceName)")
+        safeLogMessage("Model: \(deviceModel)")
+        safeLogMessage("Mantou Version: \(appVersion)\n")
 
-		if Preferences.appUpdates {
-			// Register background task
-			BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.mantou.app.sourcerefresh", using: nil) { task in
-				self.handleAppRefresh(task: task as! BGAppRefreshTask)
-			}
-			scheduleAppRefresh()
-			
-			let backgroundQueue = OperationQueue()
-			backgroundQueue.qualityOfService = .background
-			let operation = SourceRefreshOperation()
-			backgroundQueue.addOperation(operation)
-		}
+        if Preferences.appUpdates {
+            // Register background task
+            BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.mantou.app.sourcerefresh", using: nil) { [weak self] task in
+                if let task = task as? BGAppRefreshTask {
+                    self?.handleAppRefresh(task: task)
+                }
+            }
+            scheduleAppRefresh()
+            
+            let backgroundQueue = OperationQueue()
+            backgroundQueue.qualityOfService = .background
+            let operation = SourceRefreshOperation()
+            backgroundQueue.addOperation(operation)
+        }
         
         // 注册应用模式变化通知
         NotificationCenter.default.addObserver(
@@ -124,15 +161,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     // 检查应用模式并设置相应界面
     private func checkAppModeAndSetupUI() {
         // 检查服务器配置
-        AppModeManager.shared.checkServerConfiguration { [weak self] modeChanged in
-            guard let self = self else { return }
-            
-            DispatchQueue.main.async {
+        AppModeManager.shared.checkServerConfiguration { modeChanged in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
                 self.setupUIBasedOnAppMode()
                 
-                // 设置应用界面颜色
-                self.window!.tintColor = Preferences.appTintColor.uiColor
-                self.window!.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: Preferences.preferredInterfaceStyle) ?? .unspecified
+                // 安全设置应用界面颜色
+                if let window = self.window {
+                    window.tintColor = Preferences.appTintColor.uiColor
+                    window.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: Preferences.preferredInterfaceStyle) ?? .unspecified
+                }
             }
         }
     }
@@ -162,13 +200,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     
     // 动画切换根视图控制器
     private func animateRootViewControllerChange(to viewController: UIViewController) {
+        guard let window = window else { return }
+        
         // 使用淡入淡出动画切换
         let transition = CATransition()
         transition.type = .fade
         transition.duration = 0.3
         
-        window?.layer.add(transition, forKey: kCATransition)
-        window?.rootViewController = viewController
+        window.layer.add(transition, forKey: kCATransition)
+        window.rootViewController = viewController
     }
     
     // 处理应用模式变化通知
@@ -184,7 +224,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         backgroundQueue.addOperation(operation)
         
         // 应用回到前台时检查应用模式
-        AppModeManager.shared.checkServerConfiguration { [weak self] modeChanged in
+        AppModeManager.shared.checkServerConfiguration { _ in
             // 如果模式发生变化，会自动通过通知触发UI更新
         }
     }
@@ -195,9 +235,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
 
         do {
             try BGTaskScheduler.shared.submit(request)
-            Debug.shared.log(message: "Background refresh scheduled successfully", type: .info)
+            safeLogMessage("Background refresh scheduled successfully", type: .info)
         } catch {
-            Debug.shared.log(message: "Could not schedule app refresh: \(error.localizedDescription)", type: .info)
+            safeLogMessage("Could not schedule app refresh: \(error.localizedDescription)", type: .info)
         }
     }
 
@@ -227,16 +267,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                 let fullPath = String(url.absoluteString[config.upperBound...])
 
                 if fullPath.starts(with: "https://") {
-                    CoreDataManager.shared.getSourceData(urlString: fullPath) { error in
+                    CoreDataManager.shared.getSourceData(urlString: fullPath) { [self] error in
                         if let error {
-                            Debug.shared.log(message: "SourcesViewController.sourcesAddButtonTapped: \(error)", type: .critical)
+                            self.safeLogMessage("SourcesViewController.sourcesAddButtonTapped: \(error)", type: .critical)
                         } else {
-                            Debug.shared.log(message: "Successfully added!", type: .success)
+                            self.safeLogMessage("Successfully added!", type: .success)
                             NotificationCenter.default.post(name: Notification.Name("sfetch"), object: nil)
                         }
                     }
                 } else {
-                    Debug.shared.log(message: "Invalid or non-HTTPS URL", type: .error)
+                    safeLogMessage("Invalid or non-HTTPS URL", type: .error)
                 }
             } else if let config = url.absoluteString.range(of: "/install/") {
                 let fullPath = String(url.absoluteString[config.upperBound...])
@@ -264,7 +304,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                                 let dl = AppDownload()
                                 try handleIPAFile(destinationURL: destinationURL, uuid: uuid, dl: dl)
                                 
-                                DispatchQueue.main.async {
+                                DispatchQueue.main.async { [self] in
                                     self.loaderAlert.dismiss(animated: true) {
                                         let downloadedApps = CoreDataManager.shared.getDatedDownloadedApps()
                                         if let downloadedApp = downloadedApps.first(where: { $0.uuid == uuid }) {
@@ -292,7 +332,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                                             
                                             let navigationController = UINavigationController(rootViewController: ap)
                                             
-											navigationController.shouldPresentFullScreen()
+                                            navigationController.shouldPresentFullScreen()
                                             
                                             rootViewController.present(navigationController, animated: true)
                                         }
@@ -300,14 +340,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                                 }
                             }
                         } catch {
-                            DispatchQueue.main.async {
+                            DispatchQueue.main.async { [self] in
                                 self.loaderAlert.dismiss(animated: true)
-                                Debug.shared.log(message: "Failed to handle IPA file: \(error)", type: .error)
+                                self.safeLogMessage("Failed to handle IPA file: \(error)", type: .error)
                             }
                         }
                     }
                 } else {
-                    Debug.shared.log(message: "Invalid or non-HTTPS URL", type: .error)
+                    safeLogMessage("Invalid or non-HTTPS URL", type: .error)
                 }
             } else if let config = url.absoluteString.range(of: "/udid/") {
                 // 处理UDID回调
@@ -317,7 +357,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                     // 保存UDID
                     globalDeviceUUID = udid
                     UserDefaults.standard.set(udid, forKey: "deviceUDID")
-                    Debug.shared.log(message: "成功获取并保存UDID: \(udid)")
+                    safeLogMessage("成功获取并保存UDID: \(udid)")
                     
                     // 通知UI更新
                     NotificationCenter.default.post(
@@ -354,14 +394,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
 
                     try handleIPAFile(destinationURL: destinationURL, uuid: uuid, dl: dl)
 
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [self] in
                         self.loaderAlert.dismiss(animated: true)
-                        Debug.shared.log(message: "Moved IPA file to: \(destinationURL)")
+                        self.safeLogMessage("Moved IPA file to: \(destinationURL)")
                     }
                 } catch {
-                    DispatchQueue.main.async {
+                    DispatchQueue.main.async { [self] in
                         self.loaderAlert.dismiss(animated: true)
-                        Debug.shared.log(message: "Failed to move IPA file: \(error)")
+                        self.safeLogMessage("Failed to move IPA file: \(error)")
                     }
                 }
             }
@@ -408,12 +448,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         if AppModeManager.shared.isNormalMode {
             let tabBarController = UIHostingController(rootView: TabbarView())
             
+            guard let window = window else { return }
+            
             let transition = CATransition()
             transition.type = .fade
             transition.duration = 0.3
             
-            window?.layer.add(transition, forKey: kCATransition)
-            window?.rootViewController = tabBarController
+            window.layer.add(transition, forKey: kCATransition)
+            window.rootViewController = tabBarController
         }
     }
 
@@ -424,8 +466,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                 id: "com.mantou.app-repo",
                 iconURL: URL(string: "https://uni.cloudmantoub.online/512@2x.png"),
                 url:"https://uni.cloudmantoub.online/source.json"
-            ) { _ in
-                Debug.shared.log(message: "Added default repos!")
+            ) { [self] _ in
+                self.safeLogMessage("Added default repos!")
                 Preferences.defaultRepos = true
             }
         }
@@ -525,13 +567,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                     // 导入成功后删除原文件，避免重复导入
                     try fileManager.removeItem(at: ipaURL)
                     
-                    Debug.shared.log(message: "自动导入IPA文件成功: \(ipaURL.lastPathComponent)", type: .success)
+                    safeLogMessage("自动导入IPA文件成功: \(ipaURL.lastPathComponent)", type: .success)
                 } catch {
-                    Debug.shared.log(message: "自动导入IPA文件失败: \(error.localizedDescription)", type: .error)
+                    safeLogMessage("自动导入IPA文件失败: \(error.localizedDescription)", type: .error)
                 }
             }
         } catch {
-            Debug.shared.log(message: "检查ImportedIPAs目录失败: \(error.localizedDescription)", type: .error)
+            safeLogMessage("检查ImportedIPAs目录失败: \(error.localizedDescription)", type: .error)
         }
     }
 
@@ -562,14 +604,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
             do {
                 try FileManager.default.removeItem(at: logFilePath)
             } catch {
-                Debug.shared.log(message: "Error removing existing logs.txt: \(error)", type: .error)
+                safeLogMessage("Error removing existing logs.txt: \(error)", type: .error)
             }
         }
 
         do {
             try "".write(to: logFilePath, atomically: true, encoding: .utf8)
         } catch {
-            Debug.shared.log(message: "Error removing existing logs.txt: \(error)", type: .error)
+            safeLogMessage("Error removing existing logs.txt: \(error)", type: .error)
         }
     }
 
