@@ -1,4 +1,0 @@
-module NukeVideo {
-header "NukeVideo-Swift.h"
-export *
-}

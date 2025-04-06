@@ -1,4 +1,0 @@
-module CNIODarwin {
-umbrella header "/Users/mantou/Library/Developer/Xcode/DerivedData/mantou-dontvldpvuzqzngbxediatxgvawn/SourcePackages/checkouts/swift-nio/Sources/CNIODarwin/include/CNIODarwin.h"
-export *
-}

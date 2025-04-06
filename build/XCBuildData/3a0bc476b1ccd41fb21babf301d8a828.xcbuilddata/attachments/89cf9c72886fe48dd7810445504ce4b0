@@ -1,4 +1,0 @@
-module AlertKit {
-header "AlertKit-Swift.h"
-export *
-}

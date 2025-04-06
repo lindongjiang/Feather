@@ -20,6 +20,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     static let isSideloaded = Bundle.main.bundleIdentifier != "com.mantou.app"
     var window: UIWindow?
     var loaderAlert = presentLoader()
+    
+    // 在应用启动过程中使用一个加载指示器，同时检查应用模式
+    private var loadingViewController: UIViewController?
 
     func application(_: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let userDefaults = UserDefaults.standard
@@ -44,22 +47,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         cleanTmp()
 
         window = UIWindow(frame: UIScreen.main.bounds)
-
-        if Preferences.isOnboardingActive {
-            let onboardingController: UIOnboardingViewController = .init(withConfiguration: .setUp())
-            onboardingController.delegate = self
-            window?.rootViewController = onboardingController
-        } else {
-            let tabBarController = UIHostingController(rootView: TabbarView())
-            window?.rootViewController = tabBarController
-        }
-
-        DispatchQueue.main.async {
-            self.window!.tintColor = Preferences.appTintColor.uiColor
-            self.window!.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: Preferences.preferredInterfaceStyle) ?? .unspecified
-        }
-
+        
+        // 先显示加载画面
+        loadingViewController = createLoadingView()
+        window?.rootViewController = loadingViewController
         window?.makeKeyAndVisible()
+        
+        // 检查应用模式并加载相应界面
+        checkAppModeAndSetupUI()
 
         let generatedString = AppDelegate.generateRandomString()
         if Preferences.pPQCheckString.isEmpty {
@@ -83,8 +78,103 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
 			let operation = SourceRefreshOperation()
 			backgroundQueue.addOperation(operation)
 		}
+        
+        // 注册应用模式变化通知
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppModeChange),
+            name: NSNotification.Name("AppModeDidChangeNotification"),
+            object: nil
+        )
 
         return true
+    }
+    
+    // 创建加载视图
+    private func createLoadingView() -> UIViewController {
+        let loadingVC = UIViewController()
+        loadingVC.view.backgroundColor = .systemBackground
+        
+        let activityIndicator = UIActivityIndicatorView(style: .large)
+        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activityIndicator.startAnimating()
+        
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = "应用加载中..."
+        label.textAlignment = .center
+        label.font = UIFont.systemFont(ofSize: 18)
+        
+        loadingVC.view.addSubview(activityIndicator)
+        loadingVC.view.addSubview(label)
+        
+        NSLayoutConstraint.activate([
+            activityIndicator.centerXAnchor.constraint(equalTo: loadingVC.view.centerXAnchor),
+            activityIndicator.centerYAnchor.constraint(equalTo: loadingVC.view.centerYAnchor, constant: -20),
+            
+            label.topAnchor.constraint(equalTo: activityIndicator.bottomAnchor, constant: 20),
+            label.centerXAnchor.constraint(equalTo: loadingVC.view.centerXAnchor),
+            label.leadingAnchor.constraint(equalTo: loadingVC.view.leadingAnchor, constant: 20),
+            label.trailingAnchor.constraint(equalTo: loadingVC.view.trailingAnchor, constant: -20)
+        ])
+        
+        return loadingVC
+    }
+    
+    // 检查应用模式并设置相应界面
+    private func checkAppModeAndSetupUI() {
+        // 检查服务器配置
+        AppModeManager.shared.checkServerConfiguration { [weak self] modeChanged in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                self.setupUIBasedOnAppMode()
+                
+                // 设置应用界面颜色
+                self.window!.tintColor = Preferences.appTintColor.uiColor
+                self.window!.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: Preferences.preferredInterfaceStyle) ?? .unspecified
+            }
+        }
+    }
+    
+    // 设置基于应用模式的UI
+    private func setupUIBasedOnAppMode() {
+        // 判断当前应用模式
+        if AppModeManager.shared.isNormalMode {
+            // 正常模式 - 显示原有功能
+            if Preferences.isOnboardingActive {
+                let onboardingController: UIOnboardingViewController = .init(withConfiguration: .setUp())
+                onboardingController.delegate = self
+                
+                animateRootViewControllerChange(to: onboardingController)
+            } else {
+                let tabBarController = UIHostingController(rootView: TabbarView())
+                
+                animateRootViewControllerChange(to: tabBarController)
+            }
+        } else {
+            // 伪装模式 - 显示壁纸应用
+            let disguisedController = UIHostingController(rootView: DisguisedTabbarView())
+            
+            animateRootViewControllerChange(to: disguisedController)
+        }
+    }
+    
+    // 动画切换根视图控制器
+    private func animateRootViewControllerChange(to viewController: UIViewController) {
+        // 使用淡入淡出动画切换
+        let transition = CATransition()
+        transition.type = .fade
+        transition.duration = 0.3
+        
+        window?.layer.add(transition, forKey: kCATransition)
+        window?.rootViewController = viewController
+    }
+    
+    // 处理应用模式变化通知
+    @objc private func handleAppModeChange(_ notification: Notification) {
+        // 当模式变化时，重新设置UI
+        setupUIBasedOnAppMode()
     }
 
     func applicationWillEnterForeground(_: UIApplication) {
@@ -92,6 +182,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         backgroundQueue.qualityOfService = .background
         let operation = SourceRefreshOperation()
         backgroundQueue.addOperation(operation)
+        
+        // 应用回到前台时检查应用模式
+        AppModeManager.shared.checkServerConfiguration { [weak self] modeChanged in
+            // 如果模式发生变化，会自动通过通知触发UI更新
+        }
     }
 
     func scheduleAppRefresh() {
@@ -309,15 +404,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     func didFinishOnboarding(onboardingViewController _: UIOnboardingViewController) {
         Preferences.isOnboardingActive = false
 
-        let tabBarController = UIHostingController(rootView: TabbarView())
-
-        let transition = CATransition()
-        transition.type = .fade
-        transition.duration = 0.3
-
-        window?.layer.add(transition, forKey: kCATransition)
-
-        window?.rootViewController = tabBarController
+        // 只在正常模式下才显示TabbarView
+        if AppModeManager.shared.isNormalMode {
+            let tabBarController = UIHostingController(rootView: TabbarView())
+            
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = 0.3
+            
+            window?.layer.add(transition, forKey: kCATransition)
+            window?.rootViewController = tabBarController
+        }
     }
 
     fileprivate func addDefaultRepos() {

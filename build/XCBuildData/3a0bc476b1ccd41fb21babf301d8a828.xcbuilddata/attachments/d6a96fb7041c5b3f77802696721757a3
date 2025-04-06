@@ -1,4 +1,0 @@
-module BitByteData {
-header "BitByteData-Swift.h"
-export *
-}
