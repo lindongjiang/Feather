@@ -41,17 +41,20 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
     public struct AppData: Decodable {
         let id: String
         let name: String
-        let version: String
-        let icon: String
-        let web_icon: String?
-        let requires_key: Int
+        let date: String?
         let size: Int?
-        let type: Int?
+        let channel: String?
+        let build: String?
+        let version: String
         let identifier: String?
+        let pkg: String?
+        let icon: String
+        let plist: String?
+        let web_icon: String?
+        let type: Int?
+        let requires_key: Int
         let created_at: String?
         let updated_at: String?
-        let pkg: String?
-        let plist: String?
         let requiresUnlock: Bool?
         let isUnlocked: Bool?
         
@@ -60,8 +63,8 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
         }
         
         enum CodingKeys: String, CodingKey {
-            case id, name, version, icon, size, type, identifier, pkg, plist
-            case web_icon, requires_key, created_at, updated_at
+            case id, name, date, size, channel, build, version, identifier, pkg, icon, plist
+            case web_icon, type, requires_key, created_at, updated_at
             case requiresUnlock, isUnlocked
         }
     }
@@ -358,26 +361,62 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
     }
 
     private func fetchAppData() {
-        guard let url = URL(string: "\(baseURL)/apps") else { return }
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            guard let data = data, error == nil else {
-                print("数据请求失败：\(error?.localizedDescription ?? "未知错误")")
-                return
-            }
-            do {
-                let response = try JSONDecoder().decode(APIResponse<[AppData]>.self, from: data)
-                if response.success {
-                    DispatchQueue.main.async {
-                        self?.apps = response.data
-                        self?.collectionView.reloadData()
-                    }
-                } else {
-                    print("API请求失败：\(response.message ?? "未知错误")")
+        // 显示加载提示
+        let loadingAlert = UIAlertController(title: "加载中", message: "正在获取应用列表...", preferredStyle: .alert)
+        present(loadingAlert, animated: true, completion: nil)
+        
+        // 使用ServerController获取应用列表
+        ServerController.shared.getAppList { [weak self] serverApps, error in
+            // 关闭加载提示
+            DispatchQueue.main.async {
+                loadingAlert.dismiss(animated: true, completion: nil)
+                
+                if let error = error {
+                    print("获取应用列表失败: \(error)")
+                    // 显示错误提示
+                    let errorAlert = UIAlertController(
+                        title: "获取应用失败",
+                        message: "无法获取应用列表，请稍后再试。\n错误: \(error)",
+                        preferredStyle: .alert
+                    )
+                    errorAlert.addAction(UIAlertAction(title: "确定", style: .default))
+                    self?.present(errorAlert, animated: true)
+                    return
                 }
-            } catch {
-                print("JSON 解析失败：\(error.localizedDescription)")
+                
+                guard let serverApps = serverApps else {
+                    print("没有获取到应用列表")
+                    return
+                }
+                
+                // 将ServerApp转换为AppData
+                let convertedApps: [AppData] = serverApps.map { app in
+                    return AppData(
+                        id: app.id,
+                        name: app.name,
+                        date: nil,
+                        size: nil,
+                        channel: nil,
+                        build: nil,
+                        version: app.version,
+                        identifier: nil,
+                        pkg: app.pkg,
+                        icon: app.icon,
+                        plist: app.plist,
+                        web_icon: nil,
+                        type: nil,
+                        requires_key: app.requiresKey ? 1 : 0,
+                        created_at: nil,
+                        updated_at: nil,
+                        requiresUnlock: app.requiresKey,
+                        isUnlocked: false
+                    )
+                }
+                
+                self?.apps = convertedApps
+                self?.collectionView.reloadData()
             }
-        }.resume()
+        }
     }
 
     private func checkUDIDStatus(for app: AppData) {
@@ -450,83 +489,42 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
     }
 
     private func verifyUnlockCode(_ code: String, for app: AppData) {
-        guard let cleanUUID = globalDeviceUUID?
-            .replacingOccurrences(of: "Optional(\"", with: "")
-            .replacingOccurrences(of: "\")", with: ""),
-            !cleanUUID.isEmpty else {
-            print("设备 UUID 无效")
-            return
-        }
-
-        guard let url = URL(string: "\(baseURL)/verify") else {
-            print("URL构建失败")
-            return
-        }
+        // 显示加载提示
+        let loadingAlert = UIAlertController(title: "验证中", message: "正在验证解锁码...", preferredStyle: .alert)
+        present(loadingAlert, animated: true, completion: nil)
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body: [String: Any] = [
-            "cardKey": code,
-            "udid": cleanUUID,
-            "appId": app.id
-        ]
-
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        } catch {
-            print("请求体序列化失败：\(error.localizedDescription)")
-            return
-        }
-
-        print("验证卡密：appId=\(app.id), udid=\(cleanUUID)")
-        
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let data = data, error == nil else {
-                print("验证卡密失败：\(error?.localizedDescription ?? "未知错误")")
-                return
-            }
-
-            do {
-                // 解析返回的数据
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let success = json["success"] as? Bool {
+        // 使用ServerController验证卡密
+        ServerController.shared.verifyCard(cardKey: code, appId: app.id) { [weak self] success, message in
+            // 关闭加载提示
+            DispatchQueue.main.async {
+                loadingAlert.dismiss(animated: true, completion: nil)
+                
+                if success {
+                    print("卡密验证成功，获取应用详情")
+                    // 验证成功后再次获取应用详情
+                    self?.fetchAppDetails(for: app)
                     
-                    DispatchQueue.main.async {
-                        if success {
-                            print("卡密验证成功，获取应用详情")
-                            // 验证成功后再次获取应用详情
-                            self?.fetchAppDetails(for: app)
-                            
-                            // 显示成功消息
-                            let message = json["message"] as? String ?? "卡密验证成功"
-                            let alert = UIAlertController(
-                                title: "验证成功",
-                                message: message,
-                                preferredStyle: .alert
-                            )
-                            alert.addAction(UIAlertAction(title: "确定", style: .default, handler: nil))
-                            self?.present(alert, animated: true, completion: nil)
-                        } else {
-                            let message = json["message"] as? String ?? "请检查卡密是否正确"
-                            print("验证失败：\(message)")
-                            let alert = UIAlertController(
-                                title: "验证失败",
-                                message: message,
-                                preferredStyle: .alert
-                            )
-                            alert.addAction(UIAlertAction(title: "确定", style: .default, handler: nil))
-                            self?.present(alert, animated: true, completion: nil)
-                        }
-                    }
+                    // 显示成功消息
+                    let alert = UIAlertController(
+                        title: "验证成功",
+                        message: message ?? "卡密验证成功",
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: "确定", style: .default, handler: nil))
+                    self?.present(alert, animated: true, completion: nil)
                 } else {
-                    print("无法解析验证响应")
+                    let errorMessage = message ?? "请检查卡密是否正确"
+                    print("验证失败：\(errorMessage)")
+                    let alert = UIAlertController(
+                        title: "验证失败",
+                        message: errorMessage,
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: "确定", style: .default, handler: nil))
+                    self?.present(alert, animated: true, completion: nil)
                 }
-            } catch {
-                print("解析验证响应失败：\(error.localizedDescription)")
             }
-        }.resume()
+        }
     }
 
     private func handleInstall(for app: AppData) {
@@ -557,71 +555,85 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
     }
 
     private func fetchAppDetails(for app: AppData) {
-        guard let cleanUUID = globalDeviceUUID?
-            .replacingOccurrences(of: "Optional(\"", with: "")
-            .replacingOccurrences(of: "\")", with: ""),
-            !cleanUUID.isEmpty else {
-            print("设备 UUID 无效")
-            return
-        }
-
-        guard let encodedUUID = cleanUUID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            print("UDID编码失败")
-            return
-        }
-
-        // 使用路径参数传递应用ID，使用查询参数传递UDID
-        let urlString = "\(baseURL)/apps/\(app.id)?udid=\(encodedUUID)"
-        guard let url = URL(string: urlString) else { 
-            print("URL构建失败")
-            return 
-        }
+        // 显示加载提示
+        let loadingAlert = UIAlertController(title: "加载中", message: "正在获取应用信息...", preferredStyle: .alert)
+        present(loadingAlert, animated: true, completion: nil)
         
-        print("获取应用详情: \(urlString)")
-        
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            guard let data = data, error == nil else {
-                print("获取应用详情失败：\(error?.localizedDescription ?? "未知错误")")
-                return
-            }
-            
-            do {
-                let response = try JSONDecoder().decode(APIResponse<AppData>.self, from: data)
-                DispatchQueue.main.async {
-                    if response.success {
-                        let appWithDetails = response.data
-                        
-                        // 检查应用是否需要解锁且未解锁
-                        if let requiresUnlock = appWithDetails.requiresUnlock, 
-                           requiresUnlock && !(appWithDetails.isUnlocked ?? false) {
-                            print("应用需要解锁且未解锁")
-                            self?.promptUnlockCode(for: app)
-                        } else if appWithDetails.plist != nil {
-                            // 应用已解锁或不需要解锁，且有plist可以安装
-                            print("应用可以安装")
-                            self?.startInstallation(for: appWithDetails)
-                        } else {
-                            print("应用无法安装：缺少安装信息")
-                            let alert = UIAlertController(
-                                title: "无法安装",
-                                message: "此应用暂时无法安装，请稍后再试",
-                                preferredStyle: .alert
-                            )
-                            alert.addAction(UIAlertAction(title: "确定", style: .default, handler: nil))
-                            self?.present(alert, animated: true, completion: nil)
-                        }
+        // 使用ServerController获取应用详情
+        ServerController.shared.getAppDetail(appId: app.id) { [weak self] appDetail, error in
+            // 关闭加载提示
+            DispatchQueue.main.async {
+                loadingAlert.dismiss(animated: true, completion: nil)
+                
+                if let error = error {
+                    print("获取应用详情失败: \(error)")
+                    // 如果应用需要验证码，提示输入
+                    if app.requiresKey {
+                        self?.promptUnlockCode(for: app)
                     } else {
-                        print("获取应用详情失败：\(response.message ?? "未知错误")")
-                        if app.requiresKey {
-                            // 如果API返回失败且应用需要卡密，提示输入卡密
-                            self?.promptUnlockCode(for: app)
-                        }
+                        // 显示错误提示
+                        let errorAlert = UIAlertController(
+                            title: "获取应用信息失败",
+                            message: "无法获取应用详细信息，请稍后再试。\n错误: \(error)",
+                            preferredStyle: .alert
+                        )
+                        errorAlert.addAction(UIAlertAction(title: "确定", style: .default))
+                        self?.present(errorAlert, animated: true)
                     }
+                    return
                 }
-            } catch {
-                print("解析应用详情响应失败：\(error.localizedDescription)")
+                
+                guard let appDetail = appDetail else {
+                    print("没有获取到应用详情")
+                    if app.requiresKey {
+                        self?.promptUnlockCode(for: app)
+                    }
+                    return
+                }
+                
+                // 检查应用是否需要解锁且未解锁
+                if appDetail.requiresUnlock && !appDetail.isUnlocked {
+                    print("应用需要解锁且未解锁")
+                    self?.promptUnlockCode(for: app)
+                } else if let plist = appDetail.plist {
+                    // 应用已解锁或不需要解锁，且有plist可以安装
+                    print("应用可以安装，plist: \(plist)")
+                    
+                    // 创建一个新的AppData对象，包含更多详情信息
+                    let updatedApp = AppData(
+                        id: appDetail.id,
+                        name: appDetail.name,
+                        date: nil,
+                        size: nil,
+                        channel: nil,
+                        build: nil,
+                        version: appDetail.version,
+                        identifier: nil,
+                        pkg: appDetail.pkg,
+                        icon: appDetail.icon,
+                        plist: plist,
+                        web_icon: nil,
+                        type: nil,
+                        requires_key: appDetail.requiresUnlock ? 1 : 0,
+                        created_at: nil,
+                        updated_at: nil,
+                        requiresUnlock: appDetail.requiresUnlock,
+                        isUnlocked: appDetail.isUnlocked
+                    )
+                    
+                    self?.startInstallation(for: updatedApp)
+                } else {
+                    print("应用无法安装：缺少安装信息")
+                    let alert = UIAlertController(
+                        title: "无法安装",
+                        message: "此应用暂时无法安装，请稍后再试",
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: "确定", style: .default, handler: nil))
+                    self?.present(alert, animated: true, completion: nil)
+                }
             }
-        }.resume()
+        }
     }
 
     override func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {

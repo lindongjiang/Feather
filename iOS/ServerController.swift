@@ -1,15 +1,70 @@
 import Foundation
 
+// 注意：此文件使用的globalDeviceUUID变量已在StoreCollectionViewController.swift中声明
+
 class ServerController {
     static let shared = ServerController()
     
     // 服务器基础URL
-    private var baseURL = "https://uni.cloudmantoub.online/api.php"
+    private var baseURL = "https://renmai.cloudmantoub.online/api"
     
     // 私有初始化方法
     private init() {}
     
     // MARK: - 公共方法
+    
+    // 获取应用列表
+    func getAppList(completion: @escaping ([ServerApp]?, String?) -> Void) {
+        sendRequest(endpoint: "/client/apps", method: "GET") { success, data, error in
+            if success, let data = data {
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let result = json["data"] as? [String: Any],
+                       let iv = result["iv"] as? String,
+                       let encryptedData = result["data"] as? String,
+                       let decryptedString = CryptoUtils.shared.decrypt(encryptedData: encryptedData, iv: iv),
+                       let decryptedData = decryptedString.data(using: .utf8),
+                       let apps = try? JSONDecoder().decode([ServerApp].self, from: decryptedData) {
+                        completion(apps, nil)
+                    } else {
+                        completion(nil, "解密或解析数据失败")
+                    }
+                } catch {
+                    completion(nil, "解析响应失败: \(error.localizedDescription)")
+                }
+            } else {
+                completion(nil, error)
+            }
+        }
+    }
+    
+    // 获取应用详情
+    func getAppDetail(appId: String, completion: @escaping (AppDetail?, String?) -> Void) {
+        let deviceID = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
+        let endpoint = "/client/apps/\(appId)?udid=\(deviceID)"
+        
+        sendRequest(endpoint: endpoint, method: "GET") { success, data, error in
+            if success, let data = data {
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let result = json["data"] as? [String: Any],
+                       let iv = result["iv"] as? String,
+                       let encryptedData = result["data"] as? String,
+                       let decryptedString = CryptoUtils.shared.decrypt(encryptedData: encryptedData, iv: iv),
+                       let decryptedData = decryptedString.data(using: .utf8),
+                       let appDetail = try? JSONDecoder().decode(AppDetail.self, from: decryptedData) {
+                        completion(appDetail, nil)
+                    } else {
+                        completion(nil, "解密或解析数据失败")
+                    }
+                } catch {
+                    completion(nil, "解析响应失败: \(error.localizedDescription)")
+                }
+            } else {
+                completion(nil, error)
+            }
+        }
+    }
     
     // 注册设备
     func registerDevice(completion: @escaping (Bool, String?) -> Void) {
@@ -119,10 +174,41 @@ class ServerController {
         }
     }
     
+    // 验证卡密
+    func verifyCard(cardKey: String, appId: String, completion: @escaping (Bool, String?) -> Void) {
+        let deviceID = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
+        let udid = globalDeviceUUID ?? deviceID
+        
+        // 构建请求体
+        let requestBody: [String: Any] = [
+            "cardKey": cardKey,
+            "udid": udid,
+            "appId": appId
+        ]
+        
+        // 发送请求
+        sendRequest(endpoint: "/client/verify", method: "POST", body: requestBody) { success, data, error in
+            if success, let data = data {
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let success = json["success"] as? Bool {
+                        let message = json["message"] as? String
+                        completion(success, message)
+                    } else {
+                        completion(false, "无效响应")
+                    }
+                } catch {
+                    completion(false, "解析响应失败: \(error.localizedDescription)")
+                }
+            } else {
+                completion(false, error)
+            }
+        }
+    }
+    
     // MARK: - 私有辅助方法
     
     private func sendRequest(endpoint: String, method: String, body: [String: Any]? = nil, completion: @escaping (Bool, Data?, String?) -> Void) {
-        
         guard let url = URL(string: baseURL + endpoint) else {
             completion(false, nil, "无效URL")
             return
@@ -195,5 +281,70 @@ extension UIDevice {
         // 更多型号...
         default: return identifier
         }
+    }
+}
+
+// 数据模型
+struct ServerApp: Codable {
+    let id: String
+    let name: String
+    let date: String?
+    let size: Int?
+    let channel: String?
+    let build: String?
+    let version: String
+    let identifier: String?
+    let pkg: String?
+    let icon: String
+    let plist: String?
+    let web_icon: String?
+    let type: Int?
+    let requires_key: Int
+    let created_at: String?
+    let updated_at: String?
+    
+    var requiresKey: Bool {
+        return requires_key == 1
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case date
+        case size
+        case channel
+        case build
+        case version
+        case identifier
+        case pkg
+        case icon
+        case plist
+        case web_icon
+        case type
+        case requires_key
+        case created_at
+        case updated_at
+    }
+}
+
+struct AppDetail: Codable {
+    let id: String
+    let name: String
+    let version: String
+    let icon: String
+    let plist: String?
+    let pkg: String?
+    let requiresUnlock: Bool
+    let isUnlocked: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case version
+        case icon
+        case plist
+        case pkg
+        case requiresUnlock = "requires_unlock"
+        case isUnlocked = "is_unlocked"
     }
 } 
