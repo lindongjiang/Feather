@@ -16,43 +16,63 @@ import UIOnboarding
 import Darwin // 添加Darwin导入，用于open函数和O_EVTONLY常量
 
 var downloadTaskManager = DownloadTaskManager.shared
+
 class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControllerDelegate {
     static let isSideloaded = Bundle.main.bundleIdentifier != "com.mantou.app"
     var window: UIWindow?
     var loaderAlert = presentLoader()
     
-    // 在应用启动过程中使用一个加载指示器，同时检查应用模式
-    private var loadingViewController: UIViewController?
-    
-    // 安全记录日志的方法
-    private func safeLogMessage(_ message: String, type: LogType = .info) {
-        // 使用正确的方式查找和调用Debug类的log方法
-        if let debug = NSClassFromString("Debug") as? NSObject.Type,
-           let shared = debug.value(forKey: "shared") as? NSObject {
-            // 创建selector
-            let selector = NSSelectorFromString("log:type:")
-            if shared.responds(to: selector) {
-                DispatchQueue.main.async {
-                    _ = shared.perform(selector, with: message, with: NSNumber(value: type.rawValue))
-                }
-            } else {
-                print("[AppDelegate] \(message) (Debug.shared存在但不响应log:type:方法)")
+    // 伪装模式标志
+    private var isDisguiseMode: Bool {
+        return ModeController.shared.getCurrentMode() == .calculator
+    }
+
+    func application(_: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // 添加调试日志，显示当前模式
+        print("应用启动模式: \(isDisguiseMode ? "计算器(伪装)模式" : "真实应用模式")")
+        
+        // 立即检查服务器模式设置
+        DispatchQueue.global(qos: .userInitiated).async {
+            ModeController.shared.checkInitialServerMode {
+                // 服务器检查完成后，如果模式已更改，AppModeSwitched通知会触发handleAppModeSwitch方法
+                // 无需额外操作
             }
+        }
+        
+        // 根据模式决定是启动计算器还是真实应用
+        if isDisguiseMode {
+            // 启动计算器模式
+            return setupCalculatorMode()
         } else {
-            print("[AppDelegate] \(message)")
+            // 启动真实应用
+            return setupRealAppMode(launchOptions: launchOptions)
         }
     }
     
-    // 日志类型枚举
-    enum LogType: Int {
-        case info = 0
-        case success = 1
-        case warning = 2
-        case error = 3
-        case critical = 4
+    // 设置计算器模式
+    private func setupCalculatorMode() -> Bool {
+        // 创建窗口
+        window = UIWindow(frame: UIScreen.main.bounds)
+        
+        // 显示计算器界面
+        let calculatorVC = CalculatorViewController()
+        let navigationController = UINavigationController(rootViewController: calculatorVC)
+        window?.rootViewController = navigationController
+        window?.makeKeyAndVisible()
+        
+        // 注册模式切换通知监听
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppModeSwitch),
+            name: NSNotification.Name("AppModeSwitched"),
+            object: nil
+        )
+        
+        return true
     }
-
-    func application(_: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    
+    // 设置真实应用模式
+    private func setupRealAppMode(launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let userDefaults = UserDefaults.standard
 
         userDefaults.set(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String, forKey: "currentVersion")
@@ -64,7 +84,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         // 检查是否存储了UDID
         if let udid = userDefaults.string(forKey: "deviceUDID") {
             globalDeviceUUID = udid
-            safeLogMessage("已加载存储的UDID: \(udid)")
+            Debug.shared.log(message: "已加载存储的UDID: \(udid)")
         }
 
         createSourcesDirectory()
@@ -74,39 +94,38 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         setupLogFile()
         cleanTmp()
 
-        // 使用可选绑定创建window而不是强制解包
         window = UIWindow(frame: UIScreen.main.bounds)
-        
-        // 先显示加载画面
-        loadingViewController = createLoadingView()
-        window?.rootViewController = loadingViewController
+
+        if Preferences.isOnboardingActive {
+            let onboardingController: UIOnboardingViewController = .init(withConfiguration: .setUp())
+            onboardingController.delegate = self
+            window?.rootViewController = onboardingController
+        } else {
+            let tabBarController = UIHostingController(rootView: TabbarView())
+            window?.rootViewController = tabBarController
+        }
+
+        DispatchQueue.main.async {
+            self.window!.tintColor = Preferences.appTintColor.uiColor
+            self.window!.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: Preferences.preferredInterfaceStyle) ?? .unspecified
+        }
+
         window?.makeKeyAndVisible()
-        
-        // 检查应用模式并加载相应界面
-        checkAppModeAndSetupUI()
 
         let generatedString = AppDelegate.generateRandomString()
         if Preferences.pPQCheckString.isEmpty {
             Preferences.pPQCheckString = generatedString
         }
 
-        // 记录设备信息
-        let systemVersion = UIDevice.current.systemVersion
-        let deviceName = UIDevice.current.name
-        let deviceModel = UIDevice.current.model
-        let appVersion = logAppVersionInfo()
-        
-        safeLogMessage("Version: \(systemVersion)")
-        safeLogMessage("Name: \(deviceName)")
-        safeLogMessage("Model: \(deviceModel)")
-        safeLogMessage("Mantou Version: \(appVersion)\n")
+        Debug.shared.log(message: "Version: \(UIDevice.current.systemVersion)")
+        Debug.shared.log(message: "Name: \(UIDevice.current.name)")
+        Debug.shared.log(message: "Model: \(UIDevice.current.model)")
+        Debug.shared.log(message: "Mantou Version: \(logAppVersionInfo())\n")
 
         if Preferences.appUpdates {
             // Register background task
-            BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.mantou.app.sourcerefresh", using: nil) { [weak self] task in
-                if let task = task as? BGAppRefreshTask {
-                    self?.handleAppRefresh(task: task)
-                }
+            BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.mantou.app.sourcerefresh", using: nil) { task in
+                self.handleAppRefresh(task: task as! BGAppRefreshTask)
             }
             scheduleAppRefresh()
             
@@ -116,116 +135,72 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
             backgroundQueue.addOperation(operation)
         }
         
-        // 注册应用模式变化通知
+        // 注册模式切换通知监听
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(handleAppModeChange),
-            name: NSNotification.Name("AppModeDidChangeNotification"),
+            selector: #selector(handleAppModeSwitch),
+            name: NSNotification.Name("AppModeSwitched"),
             object: nil
         )
 
         return true
     }
     
-    // 创建加载视图
-    private func createLoadingView() -> UIViewController {
-        let loadingVC = UIViewController()
-        loadingVC.view.backgroundColor = .systemBackground
+    // 处理应用模式切换
+    @objc private func handleAppModeSwitch() {
+        // 获取当前模式
+        let currentMode = ModeController.shared.getCurrentMode()
         
-        let activityIndicator = UIActivityIndicatorView(style: .large)
-        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
-        activityIndicator.startAnimating()
+        // 创建新的根视图控制器
+        let newRootViewController: UIViewController
         
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = "应用加载中..."
-        label.textAlignment = .center
-        label.font = UIFont.systemFont(ofSize: 18)
-        
-        loadingVC.view.addSubview(activityIndicator)
-        loadingVC.view.addSubview(label)
-        
-        NSLayoutConstraint.activate([
-            activityIndicator.centerXAnchor.constraint(equalTo: loadingVC.view.centerXAnchor),
-            activityIndicator.centerYAnchor.constraint(equalTo: loadingVC.view.centerYAnchor, constant: -20),
-            
-            label.topAnchor.constraint(equalTo: activityIndicator.bottomAnchor, constant: 20),
-            label.centerXAnchor.constraint(equalTo: loadingVC.view.centerXAnchor),
-            label.leadingAnchor.constraint(equalTo: loadingVC.view.leadingAnchor, constant: 20),
-            label.trailingAnchor.constraint(equalTo: loadingVC.view.trailingAnchor, constant: -20)
-        ])
-        
-        return loadingVC
-    }
-    
-    // 检查应用模式并设置相应界面
-    private func checkAppModeAndSetupUI() {
-        // 检查服务器配置
-        AppModeManager.shared.checkServerConfiguration { modeChanged in
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.setupUIBasedOnAppMode()
-                
-                // 安全设置应用界面颜色
-                if let window = self.window {
-                    window.tintColor = Preferences.appTintColor.uiColor
-                    window.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: Preferences.preferredInterfaceStyle) ?? .unspecified
-                }
-            }
-        }
-    }
-    
-    // 设置基于应用模式的UI
-    private func setupUIBasedOnAppMode() {
-        // 判断当前应用模式
-        if AppModeManager.shared.isNormalMode {
-            // 正常模式 - 显示原有功能
+        if currentMode == .calculator {
+            // 切换到计算器模式
+            let calculatorVC = CalculatorViewController()
+            newRootViewController = UINavigationController(rootViewController: calculatorVC)
+        } else {
+            // 切换到真实应用模式
             if Preferences.isOnboardingActive {
                 let onboardingController: UIOnboardingViewController = .init(withConfiguration: .setUp())
                 onboardingController.delegate = self
-                
-                animateRootViewControllerChange(to: onboardingController)
+                newRootViewController = onboardingController
             } else {
-                let tabBarController = UIHostingController(rootView: TabbarView())
-                
-                animateRootViewControllerChange(to: tabBarController)
+                newRootViewController = UIHostingController(rootView: TabbarView())
             }
-        } else {
-            // 伪装模式 - 显示壁纸应用
-            let disguisedController = UIHostingController(rootView: DisguisedTabbarView())
-            
-            animateRootViewControllerChange(to: disguisedController)
         }
+        
+        // 使用动画过渡到新的根视图控制器
+        UIView.transition(
+            with: window!,
+            duration: 0.5,
+            options: .transitionCrossDissolve,
+            animations: {
+                self.window?.rootViewController = newRootViewController
+            }
+        )
     }
     
-    // 动画切换根视图控制器
-    private func animateRootViewControllerChange(to viewController: UIViewController) {
-        guard let window = window else { return }
+    // 处理远程推送，可用于远程控制模式切换
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
         
-        // 使用淡入淡出动画切换
-        let transition = CATransition()
-        transition.type = .fade
-        transition.duration = 0.3
-        
-        window.layer.add(transition, forKey: kCATransition)
-        window.rootViewController = viewController
-    }
-    
-    // 处理应用模式变化通知
-    @objc private func handleAppModeChange(_ notification: Notification) {
-        // 当模式变化时，重新设置UI
-        setupUIBasedOnAppMode()
+        // 检查推送是否包含模式切换指令
+        if let modeString = userInfo["app_mode"] as? String {
+            let newMode: AppMode = modeString == "realApp" ? .realApp : .calculator
+            
+            // 应用新模式
+            ModeController.shared.setMode(newMode)
+            completionHandler(.newData)
+        } else {
+            completionHandler(.noData)
+        }
     }
 
     func applicationWillEnterForeground(_: UIApplication) {
-        let backgroundQueue = OperationQueue()
-        backgroundQueue.qualityOfService = .background
-        let operation = SourceRefreshOperation()
-        backgroundQueue.addOperation(operation)
-        
-        // 应用回到前台时检查应用模式
-        AppModeManager.shared.checkServerConfiguration { _ in
-            // 如果模式发生变化，会自动通过通知触发UI更新
+        if !isDisguiseMode {
+            let backgroundQueue = OperationQueue()
+            backgroundQueue.qualityOfService = .background
+            let operation = SourceRefreshOperation()
+            backgroundQueue.addOperation(operation)
         }
     }
 
@@ -235,9 +210,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
 
         do {
             try BGTaskScheduler.shared.submit(request)
-            safeLogMessage("Background refresh scheduled successfully", type: .info)
+            Debug.shared.log(message: "Background refresh scheduled successfully", type: .info)
         } catch {
-            safeLogMessage("Could not schedule app refresh: \(error.localizedDescription)", type: .info)
+            Debug.shared.log(message: "Could not schedule app refresh: \(error.localizedDescription)", type: .info)
         }
     }
 
@@ -260,6 +235,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
     }
 
     func application(_: UIApplication, open url: URL, options _: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        // 在计算器模式下，URL处理可能会触发模式切换
+        if isDisguiseMode && url.scheme == "calculator" {
+            if url.host == "switchmode" {
+                ModeController.shared.setMode(.realApp)
+                return true
+            }
+        }
+        
         if url.scheme == "mantou" {
             // I know this is super hacky, honestly
             // I don't *exactly* care as it just works :shrug:
@@ -267,16 +250,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                 let fullPath = String(url.absoluteString[config.upperBound...])
 
                 if fullPath.starts(with: "https://") {
-                    CoreDataManager.shared.getSourceData(urlString: fullPath) { [self] error in
+                    CoreDataManager.shared.getSourceData(urlString: fullPath) { error in
                         if let error {
-                            self.safeLogMessage("SourcesViewController.sourcesAddButtonTapped: \(error)", type: .critical)
+                            Debug.shared.log(message: "SourcesViewController.sourcesAddButtonTapped: \(error)", type: .critical)
                         } else {
-                            self.safeLogMessage("Successfully added!", type: .success)
+                            Debug.shared.log(message: "Successfully added!", type: .success)
                             NotificationCenter.default.post(name: Notification.Name("sfetch"), object: nil)
                         }
                     }
                 } else {
-                    safeLogMessage("Invalid or non-HTTPS URL", type: .error)
+                    Debug.shared.log(message: "Invalid or non-HTTPS URL", type: .error)
                 }
             } else if let config = url.absoluteString.range(of: "/install/") {
                 let fullPath = String(url.absoluteString[config.upperBound...])
@@ -304,7 +287,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                                 let dl = AppDownload()
                                 try handleIPAFile(destinationURL: destinationURL, uuid: uuid, dl: dl)
                                 
-                                DispatchQueue.main.async { [self] in
+                                DispatchQueue.main.async {
                                     self.loaderAlert.dismiss(animated: true) {
                                         let downloadedApps = CoreDataManager.shared.getDatedDownloadedApps()
                                         if let downloadedApp = downloadedApps.first(where: { $0.uuid == uuid }) {
@@ -340,14 +323,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                                 }
                             }
                         } catch {
-                            DispatchQueue.main.async { [self] in
+                            DispatchQueue.main.async {
                                 self.loaderAlert.dismiss(animated: true)
-                                self.safeLogMessage("Failed to handle IPA file: \(error)", type: .error)
+                                Debug.shared.log(message: "Failed to handle IPA file: \(error)", type: .error)
                             }
                         }
                     }
                 } else {
-                    safeLogMessage("Invalid or non-HTTPS URL", type: .error)
+                    Debug.shared.log(message: "Invalid or non-HTTPS URL", type: .error)
                 }
             } else if let config = url.absoluteString.range(of: "/udid/") {
                 // 处理UDID回调
@@ -357,7 +340,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                     // 保存UDID
                     globalDeviceUUID = udid
                     UserDefaults.standard.set(udid, forKey: "deviceUDID")
-                    safeLogMessage("成功获取并保存UDID: \(udid)")
+                    Debug.shared.log(message: "成功获取并保存UDID: \(udid)")
                     
                     // 通知UI更新
                     NotificationCenter.default.post(
@@ -394,14 +377,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
 
                     try handleIPAFile(destinationURL: destinationURL, uuid: uuid, dl: dl)
 
-                    DispatchQueue.main.async { [self] in
+                    DispatchQueue.main.async {
                         self.loaderAlert.dismiss(animated: true)
-                        self.safeLogMessage("Moved IPA file to: \(destinationURL)")
+                        Debug.shared.log(message: "Moved IPA file to: \(destinationURL)")
                     }
                 } catch {
-                    DispatchQueue.main.async { [self] in
+                    DispatchQueue.main.async {
                         self.loaderAlert.dismiss(animated: true)
-                        self.safeLogMessage("Failed to move IPA file: \(error)")
+                        Debug.shared.log(message: "Failed to move IPA file: \(error)")
                     }
                 }
             }
@@ -441,21 +424,36 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
         */
     }
 
-    func didFinishOnboarding(onboardingViewController _: UIOnboardingViewController) {
-        Preferences.isOnboardingActive = false
+    // 处理远程推送注册
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        // 将设备令牌发送到您的服务器
+        let tokenParts = deviceToken.map { data in String(format: "%02.2hhx", data) }
+        let token = tokenParts.joined()
+        print("Device Token: \(token)")
+        
+        // 可以将令牌发送到服务器，用于远程切换模式
+        ServerController.shared.registerDevice { success, _ in
+            if success {
+                Debug.shared.log(message: "Successfully registered device for remote notifications", type: .info)
+            }
+        }
+    }
+    
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        print("Failed to register for remote notifications: \(error)")
+    }
 
-        // 只在正常模式下才显示TabbarView
-        if AppModeManager.shared.isNormalMode {
-            let tabBarController = UIHostingController(rootView: TabbarView())
-            
-            guard let window = window else { return }
-            
-            let transition = CATransition()
-            transition.type = .fade
-            transition.duration = 0.3
-            
-            window.layer.add(transition, forKey: kCATransition)
-            window.rootViewController = tabBarController
+    // 实现UIOnboardingViewControllerDelegate协议
+    func didFinishOnboarding(onboardingViewController: UIOnboardingViewController) {
+        Preferences.isOnboardingActive = false
+        
+        let tabBarController = UIHostingController(rootView: TabbarView())
+        
+        window?.rootViewController = tabBarController
+        
+        DispatchQueue.main.async {
+            self.window!.tintColor = Preferences.appTintColor.uiColor
+            self.window!.overrideUserInterfaceStyle = UIUserInterfaceStyle(rawValue: Preferences.preferredInterfaceStyle) ?? .unspecified
         }
     }
 
@@ -466,8 +464,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                 id: "com.mantou.app-repo",
                 iconURL: URL(string: "https://uni.cloudmantoub.online/512@2x.png"),
                 url:"https://uni.cloudmantoub.online/source.json"
-            ) { [self] _ in
-                self.safeLogMessage("Added default repos!")
+            ) { _ in
+                Debug.shared.log(message: "Added default repos!")
                 Preferences.defaultRepos = true
             }
         }
@@ -480,9 +478,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
 		}
 	}
 
-    fileprivate static func generateRandomString(length: Int = 8) -> String {
-        let characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        return String((0 ..< length).map { _ in characters.randomElement()! })
+    fileprivate static func generateRandomString(length: Int = 10) -> String {
+        let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        return String((0..<length).map { _ in letters.randomElement()! })
     }
 
     func createSourcesDirectory() {
@@ -567,13 +565,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                     // 导入成功后删除原文件，避免重复导入
                     try fileManager.removeItem(at: ipaURL)
                     
-                    safeLogMessage("自动导入IPA文件成功: \(ipaURL.lastPathComponent)", type: .success)
+                    Debug.shared.log(message: "自动导入IPA文件成功: \(ipaURL.lastPathComponent)", type: .success)
                 } catch {
-                    safeLogMessage("自动导入IPA文件失败: \(error.localizedDescription)", type: .error)
+                    Debug.shared.log(message: "自动导入IPA文件失败: \(error.localizedDescription)", type: .error)
                 }
             }
         } catch {
-            safeLogMessage("检查ImportedIPAs目录失败: \(error.localizedDescription)", type: .error)
+            Debug.shared.log(message: "检查ImportedIPAs目录失败: \(error.localizedDescription)", type: .error)
         }
     }
 
@@ -604,14 +602,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
             do {
                 try FileManager.default.removeItem(at: logFilePath)
             } catch {
-                safeLogMessage("Error removing existing logs.txt: \(error)", type: .error)
+                Debug.shared.log(message: "Error removing existing logs.txt: \(error)", type: .error)
             }
         }
 
         do {
             try "".write(to: logFilePath, atomically: true, encoding: .utf8)
         } catch {
-            safeLogMessage("Error removing existing logs.txt: \(error)", type: .error)
+            Debug.shared.log(message: "Error removing existing logs.txt: \(error)", type: .error)
         }
     }
 
