@@ -188,9 +188,6 @@ class AdvancedCalculatorViewController: UIViewController {
 // MARK: - UITableViewDelegate, UITableViewDataSource
 extension AdvancedCalculatorViewController: UITableViewDelegate, UITableViewDataSource {
     
-    // 用于记录点击"关于"部分的次数
-    private static var tapCount = 0
-    
     func numberOfSections(in tableView: UITableView) -> Int {
         return 4
     }
@@ -268,17 +265,5 @@ extension AdvancedCalculatorViewController: UITableViewDelegate, UITableViewData
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        
-        // 检查是否是"关于"部分，可以在这里放置秘密触发器
-        if indexPath.section == 3 && indexPath.row == 0 {
-            // 点击次数追踪
-            Self.tapCount += 1
-            
-            // 连续点击5次"版本"会触发切换
-            if Self.tapCount >= 5 {
-                Self.tapCount = 0
-                ModeController.shared.setMode(.realApp)
-            }
-        }
     }
 } 

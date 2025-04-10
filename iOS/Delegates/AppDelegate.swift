@@ -303,9 +303,28 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIOnboardingViewControlle
                                             
                                             ap.signingCompletionHandler = { success in
                                                 if success {
-                                                    if let workspace = LSApplicationWorkspace.default() {
-                                                        if let bundleId = downloadedApp.bundleidentifier {
-                                                            workspace.openApplication(withBundleID: bundleId)
+                                                    // 使用公开API替代LSApplicationWorkspace
+                                                    if let bundleId = downloadedApp.bundleidentifier,
+                                                       let url = URL(string: "\(bundleId)://") {
+                                                        UIApplication.shared.open(url, options: [:]) { success in
+                                                            if !success {
+                                                                Debug.shared.log(message: "无法打开应用，可能是签名有问题或应用不支持URL Scheme启动", type: .warning)
+                                                                
+                                                                // 显示帮助提示
+                                                                DispatchQueue.main.async {
+                                                                    let alert = UIAlertController(
+                                                                        title: "无法打开应用",
+                                                                        message: "应用可能未安装完成或不支持直接启动。您可以尝试从主屏幕手动打开应用。",
+                                                                        preferredStyle: .alert
+                                                                    )
+                                                                    alert.addAction(UIAlertAction(title: "知道了", style: .default))
+                                                                    
+                                                                    // 查找当前最上层控制器展示提示
+                                                                    if let topController = UIApplication.topViewController() {
+                                                                        topController.present(alert, animated: true)
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                     libraryVC.fetchSources()

@@ -19,7 +19,7 @@ class EncryptionConfig {
     
     // 获取加密密钥
     func getEncryptionKey() -> String? {
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,

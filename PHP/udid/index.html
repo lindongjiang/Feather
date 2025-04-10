@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>获取设备UDID</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background-color: #f8f8f8;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .step {
+            text-align: left;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 10px;
+        }
+        .step-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background: #007aff;
+            color: white;
+            text-align: center;
+            line-height: 30px;
+            border-radius: 50%;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .button {
+            display: inline-block;
+            background-color: #007aff;
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            margin-top: 20px;
+            font-size: 18px;
+            border: none;
+            cursor: pointer;
+        }
+        .note {
+            margin-top: 30px;
+            color: #666;
+            font-size: 14px;
+        }
+        .logo {
+            margin-bottom: 20px;
+            max-width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="../logo.png" alt="Logo" class="logo">
+        <h1>获取您的iOS设备UDID</h1>
+        
+        <div class="step">
+            <span class="step-number">1</span>
+            <span>点击下方按钮下载并安装描述文件</span>
+        </div>
+        
+        <div class="step">
+            <span class="step-number">2</span>
+            <span>在设置app中找到"已下载的描述文件"并安装</span>
+        </div>
+        
+        <div class="step">
+            <span class="step-number">3</span>
+            <span>安装完成后，您的UDID会自动返回到应用</span>
+        </div>
+        
+        <a href="udid.mobileconfig" class="button">下载描述文件</a>
+        
+        <p class="note">注意：获取UDID是为了安装特定应用程序，我们不会收集或存储您的个人信息。</p>
+    </div>
+</body>
+</html> 

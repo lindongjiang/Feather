@@ -6,6 +6,19 @@
 	<array>
 		<string>com.mantou.app.sourcerefresh</string>
 	</array>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>systemBackground</string>
+		<key>UIImageName</key>
+		<string>AppIcon60x60</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<true/>
+		<key>UILaunchScreen</key>
+		<dict/>
+	</dict>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -109,6 +122,11 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
@@ -116,10 +134,6 @@
 	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
-	<key>NSDownloadsFolderUsageDescription</key>
-	<string>需要访问下载文件夹以保存IPA文件</string>
-	<key>NSDocumentsFolderUsageDescription</key>
-	<string>需要访问文档文件夹以管理IPA文件</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -173,10 +187,5 @@
 	<array>
 		<string>$(AppIdentifierPrefix)com.mantou.app</string>
 	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
 </dict>
 </plist>

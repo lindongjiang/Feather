@@ -410,11 +410,28 @@ extension LibraryViewController {
 					button4.onTap = { [weak self] in
 						guard let self = self else { return }
 						self.popupVC.dismiss(animated: true)
-						if let workspace = LSApplicationWorkspace.default() {
-							let success = workspace.openApplication(withBundleID: "\((source!.value(forKey: "bundleidentifier") as? String ?? ""))")
-							if !success {
-								Debug.shared.log(message: "Unable to open, do you have the app installed?", type: .warning)
+						
+						// 使用公开API代替LSApplicationWorkspace
+						if let bundleId = source!.value(forKey: "bundleidentifier") as? String,
+						   let url = URL(string: "\(bundleId)://") {
+							UIApplication.shared.open(url, options: [:]) { success in
+								if !success {
+									DispatchQueue.main.async {
+										Debug.shared.log(message: "无法打开应用，可能未安装或未正确配置URL Scheme", type: .warning)
+										
+										// 显示帮助提示
+										let alert = UIAlertController(
+											title: "无法打开应用",
+											message: "应用可能未安装或不支持直接启动。您可以尝试从主屏幕手动打开应用。",
+											preferredStyle: .alert
+										)
+										alert.addAction(UIAlertAction(title: "知道了", style: .default))
+										self.present(alert, animated: true)
+									}
+								}
 							}
+						} else {
+							Debug.shared.log(message: "应用包名无效", type: .warning)
 						}
 					}
 					
