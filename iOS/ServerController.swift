@@ -83,6 +83,11 @@ class ServerController {
         print("请求应用详情 - Endpoint: \(endpoint)")
         print("使用的UDID: \(udid)")
         
+        // 检查本地存储的解锁状态
+        let localIsUnlocked = UserDefaults.standard.bool(forKey: "app_unlocked_\(appId)")
+        let localRequiresUnlock = UserDefaults.standard.bool(forKey: "app_requires_unlock_\(appId)")
+        print("Debug: 本地存储的解锁状态 - 应用ID: \(appId), 是否已解锁: \(localIsUnlocked), 是否需要解锁: \(localRequiresUnlock)")
+        
         sendRequest(endpoint: endpoint, method: "GET") { [self] success, data, error in
             if success, let data = data {
                 do {
@@ -105,9 +110,16 @@ class ServerController {
                     }
                     
                     // 从响应中直接获取解锁状态
-                    let requiresUnlockFromResponse = dataObject["requiresUnlock"] as? Bool ?? false
-                    let isUnlockedFromResponse = dataObject["isUnlocked"] as? Bool ?? false
+                    var requiresUnlockFromResponse = dataObject["requiresUnlock"] as? Bool ?? false
+                    var isUnlockedFromResponse = dataObject["isUnlocked"] as? Bool ?? false
                     
+                    // 结合本地存储状态
+                    if localIsUnlocked {
+                        print("Debug: 使用本地存储的解锁状态覆盖服务器返回的状态")
+                        isUnlockedFromResponse = true
+                    }
+                    
+                    print("Debug: 最终解锁状态 - requiresUnlock: \(requiresUnlockFromResponse), isUnlocked: \(isUnlockedFromResponse)")
                     print("应用详情 - IV长度: \(iv.count), 加密数据长度: \(encryptedData.count)")
                     
                     // 尝试解密
@@ -142,32 +154,37 @@ class ServerController {
                         var appDetail = try decoder.decode(AppDetail.self, from: decryptedData)
                         
                         // 使用服务器直接返回的解锁状态覆盖JSON中的值
-                        if requiresUnlockFromResponse {
-                            print("从响应中读取requiresUnlock: \(requiresUnlockFromResponse)")
-                            appDetail = AppDetail(
-                                id: appDetail.id,
-                                name: appDetail.name,
-                                version: appDetail.version,
-                                icon: appDetail.icon,
-                                plist: appDetail.plist,
-                                pkg: appDetail.pkg,
-                                date: appDetail.date,
-                                size: appDetail.size,
-                                channel: appDetail.channel,
-                                build: appDetail.build,
-                                identifier: appDetail.identifier,
-                                web_icon: appDetail.web_icon,
-                                type: appDetail.type,
-                                requires_key: appDetail.requires_key,
-                                created_at: appDetail.created_at,
-                                updated_at: appDetail.updated_at,
-                                requiresUnlock: requiresUnlockFromResponse,
-                                isUnlocked: isUnlockedFromResponse
-                            )
-                        }
+                        // 同时考虑本地存储的状态
+                        print("Debug: 创建AppDetail对象 - 原始isUnlocked: \(appDetail.isUnlocked), 服务器返回isUnlocked: \(isUnlockedFromResponse), 本地isUnlocked: \(localIsUnlocked)")
                         
-                        if isUnlockedFromResponse {
-                            print("从响应中读取isUnlocked: \(isUnlockedFromResponse)")
+                        // 对isUnlocked使用更严格的优先级：本地存储 > 服务器响应 > JSON解析
+                        let finalIsUnlocked = localIsUnlocked || isUnlockedFromResponse || appDetail.isUnlocked
+                        
+                        appDetail = AppDetail(
+                            id: appDetail.id,
+                            name: appDetail.name,
+                            version: appDetail.version,
+                            icon: appDetail.icon,
+                            plist: appDetail.plist,
+                            pkg: appDetail.pkg,
+                            date: appDetail.date,
+                            size: appDetail.size,
+                            channel: appDetail.channel,
+                            build: appDetail.build,
+                            identifier: appDetail.identifier,
+                            web_icon: appDetail.web_icon,
+                            type: appDetail.type,
+                            requires_key: appDetail.requires_key,
+                            created_at: appDetail.created_at,
+                            updated_at: appDetail.updated_at,
+                            requiresUnlock: requiresUnlockFromResponse,
+                            isUnlocked: finalIsUnlocked
+                        )
+                        
+                        print("Debug: 最终创建的AppDetail对象 - requiresUnlock: \(appDetail.requiresUnlock), isUnlocked: \(appDetail.isUnlocked)")
+                        
+                        if finalIsUnlocked {
+                            print("从响应中读取isUnlocked为true，应用已解锁")
                         }
                         
                         print("成功解析应用详情: \(appDetail.name)")
@@ -400,8 +417,21 @@ class ServerController {
                             UserDefaults.standard.set(plist, forKey: "last_verified_plist_\(appId)")
                         }
                         
+                        // 检查解锁状态信息
+                        if let isUnlocked = json["isUnlocked"] as? Bool {
+                            print("Debug: 服务器返回解锁状态 isUnlocked=\(isUnlocked)")
+                            UserDefaults.standard.set(isUnlocked, forKey: "app_unlocked_\(appId)")
+                        }
+                        
+                        if let requiresUnlock = json["requiresUnlock"] as? Bool {
+                            print("Debug: 服务器返回需要解锁标志 requiresUnlock=\(requiresUnlock)")
+                            UserDefaults.standard.set(requiresUnlock, forKey: "app_requires_unlock_\(appId)")
+                        }
+                        
                         if success {
                             print("卡密验证成功: \(message ?? "无消息")")
+                            // 验证成功时，将应用标记为已解锁
+                            UserDefaults.standard.set(true, forKey: "app_unlocked_\(appId)")
                         } else {
                             print("卡密验证失败: \(message ?? "未知错误")")
                         }
