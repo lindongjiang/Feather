@@ -139,16 +139,7 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
         // 添加获取UDID按钮
         let getUDIDButton = UIBarButtonItem(title: "获取UDID", style: .plain, target: self, action: #selector(getUDIDButtonTapped))
         
-        // 添加手动安装按钮
-        let manualInstallButton = UIBarButtonItem(title: "手动安装", style: .plain, target: self, action: #selector(handleManualInstall))
-        
-        // 添加帮助按钮
-        let helpButton = UIBarButtonItem(image: UIImage(systemName: "questionmark.circle"), style: .plain, target: self, action: #selector(showUDIDHelpGuide))
-        
-        // 添加调试按钮
-        let debugButton = UIBarButtonItem(image: UIImage(systemName: "ant.circle"), style: .plain, target: self, action: #selector(showDebugMenu))
-        
-        navigationItem.rightBarButtonItems = [getUDIDButton, manualInstallButton, helpButton, debugButton]
+        navigationItem.rightBarButtonItems = [getUDIDButton]
         
         // 添加UDID显示区域
         setupUDIDDisplay()
@@ -521,17 +512,12 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
     }
 
     private func verifyUnlockCode(_ code: String, for app: AppData) {
-        print("开始验证卡密: \(code) 应用ID: \(app.id)")
-        
         // 使用ServerController验证卡密
         ServerController.shared.verifyCard(cardKey: code, appId: app.id) { [weak self] success, message in
             DispatchQueue.main.async {
                 if success {
-                    print("卡密验证成功: \(message ?? "")")
-                    
                     // 手动设置本地解锁状态
                     UserDefaults.standard.set(true, forKey: "app_unlocked_\(app.id)")
-                    print("Debug: 卡密验证成功，已在本地标记应用为已解锁 - 应用ID: \(app.id)")
                     
                     // 显示成功消息
                     let alert = UIAlertController(
@@ -551,9 +537,6 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                                 refreshAlert.dismiss(animated: true)
                                 
                                 if success {
-                                    print("应用详情刷新成功，重新获取应用详情")
-                                    print("Debug: refreshAppDetail成功，准备重新获取应用详情")
-                                    
                                     // 显示短暂的成功提示
                                     let successAlert = UIAlertController(
                                         title: "解锁成功",
@@ -593,9 +576,6 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                                         }
                                     }
                                 } else {
-                                    print("应用详情刷新失败: \(error ?? "未知错误")")
-                                    print("Debug: refreshAppDetail失败，但仍尝试继续安装")
-                                    
                                     // 显示刷新失败但继续获取应用详情
                                     let errorAlert = UIAlertController(
                                         title: "刷新失败",
@@ -639,7 +619,6 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                     })
                 } else {
                     let errorMessage = message ?? "请检查卡密是否正确"
-                    print("卡密验证失败：\(errorMessage)")
                     
                     // 显示失败消息
                     let alert = UIAlertController(
@@ -653,21 +632,8 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                         // 重新显示卡密输入框
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                             guard let self = self else { return }
-                            print("重试验证卡密，显示卡密输入框")
                             self.promptUnlockCode(for: app)
                         }
-                    })
-                    
-                    // 添加购买选项
-                    alert.addAction(UIAlertAction(title: "购买卡密", style: .default) { [weak self] _ in
-                        // 显示购买卡密的相关信息
-                        let buyAlert = UIAlertController(
-                            title: "购买卡密",
-                            message: "请联系应用开发者购买卡密\n购买成功后请回到应用验证",
-                            preferredStyle: .alert
-                        )
-                        buyAlert.addAction(UIAlertAction(title: "确定", style: .default))
-                        self?.present(buyAlert, animated: true)
                     })
                     
                     // 添加取消选项
@@ -754,8 +720,6 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
 
     // 添加一个新方法，支持已显示加载提示的情况
     private func fetchAppDetails(for app: AppData, loadingAlertShown: Bool = false, existingAlert: UIAlertController? = nil) {
-        print("开始获取应用详情 - 应用ID: \(app.id), 名称: \(app.name), 是否需要卡密: \(app.requiresKey ? "是" : "否")")
-        
         // 显示加载提示（如果尚未显示）
         var loadingAlert = existingAlert
         if !loadingAlertShown {
@@ -771,11 +735,8 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
             // 从设备ID获取
             let deviceUUID = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
             globalDeviceUUID = deviceUUID
-            print("使用设备ID作为UDID: \(deviceUUID)")
             updateUDIDDisplay(deviceUUID)
         }
-        
-        print("使用UDID: \(globalDeviceUUID ?? "未知") 获取应用详情")
         
         // 使用ServerController获取应用详情
         ServerController.shared.getAppDetail(appId: app.id) { [weak self] appDetail, error in
@@ -784,10 +745,8 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                 loadingAlert?.dismiss(animated: true, completion: nil)
                 
                 if let error = error {
-                    print("获取应用详情失败: \(error)")
                     // 如果应用需要验证码，提示输入
                     if app.requiresKey {
-                        print("应用需要卡密，提示用户输入")
                         self?.promptUnlockCode(for: app)
                     } else {
                         // 显示错误提示
@@ -803,37 +762,23 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                 }
                 
                 guard let appDetail = appDetail else {
-                    print("没有获取到应用详情")
                     if app.requiresKey {
                         self?.promptUnlockCode(for: app)
                     }
                     return
                 }
                 
-                print("成功获取应用详情 - 应用名称: \(appDetail.name), 是否需要解锁: \(appDetail.requiresUnlock), 是否已解锁: \(appDetail.isUnlocked)")
-                
                 // 检查应用是否需要解锁且未解锁
                 if (appDetail.requiresUnlock ?? false) && !(appDetail.isUnlocked ?? false) {
-                    print("应用需要解锁且未解锁，提示用户输入卡密")
-                    print("Debug: 判断条件 - requiresUnlock=\(appDetail.requiresUnlock ?? false), isUnlocked=\(appDetail.isUnlocked ?? false)")
-                    print("Debug: 应用信息 - ID=\(appDetail.id), Name=\(appDetail.name), requires_key=\(appDetail.requires_key)")
-                    
                     // 延迟显示卡密输入框，确保其他弹窗已完全消失
-                    print("延迟200ms后显示卡密输入框")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                        guard let self = self else {
-                            print("错误：self已被释放，无法显示卡密输入框")
-                            return
-                        }
-                        print("准备调用promptUnlockCode")
+                        guard let self = self else { return }
                         self.promptUnlockCode(for: app)
                     }
                 } else {
-                    print("Debug: 应用不需要解锁或已解锁 - requiresUnlock=\(appDetail.requiresUnlock ?? false), isUnlocked=\(appDetail.isUnlocked ?? false)")
                     // 获取plist路径
                     if let plist = appDetail.plist {
                         // 应用已解锁或不需要解锁，且有plist可以安装
-                        print("应用可以安装，原始plist路径: \(plist)")
                         
                         // 创建一个新的AppData对象，包含更多详情信息
                         let updatedApp = AppData(
@@ -857,8 +802,6 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                             isUnlocked: appDetail.isUnlocked
                         )
                         
-                        print("准备安装应用，更新后的plist: \(updatedApp.plist ?? "无")")
-                        
                         // 如果应用刚刚通过卡密解锁，显示一个成功信息
                         if (updatedApp.requiresUnlock ?? false) && (updatedApp.isUnlocked ?? false) {
                             // 显示解锁成功信息
@@ -881,7 +824,6 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                             self?.startInstallation(for: updatedApp)
                         }
                     } else {
-                        print("应用无法安装：缺少安装信息")
                         let alert = UIAlertController(
                             title: "无法安装",
                             message: "此应用暂时无法安装，请稍后再试",
@@ -930,11 +872,8 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
             return
         }
         
-        print("原始plist路径: \(plist)")
-        
         // 使用新的方法处理plist链接
         let finalPlistURL = processPlistLink(plist)
-        print("处理后的plist URL: \(finalPlistURL)")
         
         // 确保URL编码正确
         let encodedPlistURL = finalPlistURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? finalPlistURL
@@ -944,13 +883,11 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
         
         // 构建安装URL
         let installURLString = "itms-services://?action=download-manifest&url=\(encodedPlistURL)"
-        print("最终安装URL: \(installURLString)")
         
         // 判断应用是否可以直接安装
         // 免费应用(requires_key=0)或已解锁的应用(isUnlocked=true)都可以直接安装
         if app.requires_key == 0 || ((app.requiresUnlock ?? false) && (app.isUnlocked ?? false)) {
             // 免费或已解锁的应用，直接安装
-            print("免费或已解锁应用，直接触发安装")
             // 使用新的安全方法打开URL
             safelyOpenInstallURL(installURLString)
         } else {
@@ -966,28 +903,8 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                 self?.safelyOpenInstallURL(installURLString)
             }
             
-            // 添加调试选项
-            let debugAction = UIAlertAction(title: "调试信息", style: .default) { [weak self] _ in
-                let debugAlert = UIAlertController(
-                    title: "调试信息",
-                    message: "原始plist: \(plist)\n\n处理后URL: \(encodedPlistURL)\n\n安装URL: \(installURLString)",
-                    preferredStyle: .alert
-                )
-                debugAlert.addAction(UIAlertAction(title: "复制URL", style: .default) { _ in
-                    UIPasteboard.general.string = encodedPlistURL
-                })
-                debugAlert.addAction(UIAlertAction(title: "尝试直接安装", style: .default) { _ in
-                    if let url = URL(string: installURLString) {
-                        UIApplication.shared.open(url, options: [:], completionHandler: nil)
-                    }
-                })
-                debugAlert.addAction(UIAlertAction(title: "关闭", style: .cancel))
-                self?.present(debugAlert, animated: true)
-            }
-            
             let cancelAction = UIAlertAction(title: "取消", style: .cancel, handler: nil)
             alert.addAction(installAction)
-            alert.addAction(debugAction)
             alert.addAction(cancelAction)
 
             DispatchQueue.main.async {
@@ -998,11 +915,8 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
 
     // 添加一个方法来处理服务器返回的plist链接，格式可能是加密数据
     private func processPlistLink(_ plistLink: String) -> String {
-        print("处理plist链接: \(plistLink)")
-        
         // 1. 如果链接是直接的URL，无需处理
         if plistLink.lowercased().hasPrefix("http") {
-            print("标准HTTP/HTTPS链接，无需处理")
             return plistLink
         }
         
@@ -1013,16 +927,13 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                 let components = plistLink.components(separatedBy: "/")
                 if components.count >= 5 {
                     // 应该有格式：["", "api", "plist", "<IV>", "<加密数据>"]
-                    print("检测到API plist格式路径")
                     let fullURL = "https://renmai.cloudmantoub.online\(plistLink)"
-                    print("转换为完整URL: \(fullURL)")
                     return fullURL
                 }
             }
             
             // 普通相对路径
             let fullURL = "https://renmai.cloudmantoub.online\(plistLink)"
-            print("相对路径，转换为完整URL: \(fullURL)")
             return fullURL
         }
         
@@ -1036,26 +947,19 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                 if let iv = json["iv"] as? String,
                    let encryptedData = json["data"] as? String {
                     
-                    print("找到加密格式JSON，尝试解密")
                     if let decryptedURL = CryptoUtils.shared.decrypt(encryptedData: encryptedData, iv: iv) {
-                        print("成功解密为: \(decryptedURL)")
                         return decryptedURL
-                    } else {
-                        print("解密失败")
                     }
-                } else {
-                    print("JSON格式但缺少IV或加密数据")
                 }
             }
         } catch {
-            print("解析JSON失败: \(error.localizedDescription)")
+            // 处理解析错误
         }
         
         // 4. 如果链接看起来像是从特定API返回的加密链接格式
         if plistLink.contains("/api/plist/") && plistLink.contains("/") {
             // 这可能是已经格式化好的加密plist链接
             let fullURL = plistLink.hasPrefix("http") ? plistLink : "https://renmai.cloudmantoub.online\(plistLink)"
-            print("使用API格式plist链接: \(fullURL)")
             return fullURL
         }
         
@@ -1065,79 +969,30 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
             let possibleIV = components[0]
             let possibleData = components[1]
             
-            let (valid, message) = CryptoUtils.shared.validateFormat(encryptedData: possibleData, iv: possibleIV)
+            let (valid, _) = CryptoUtils.shared.validateFormat(encryptedData: possibleData, iv: possibleIV)
             if valid {
-                print("从链接中提取到有效的IV和加密数据")
                 let apiPath = "/api/plist/\(possibleIV)/\(possibleData)"
                 let fullURL = "https://renmai.cloudmantoub.online\(apiPath)"
-                print("构建API格式plist链接: \(fullURL)")
                 return fullURL
-            } else {
-                print("提取的IV和加密数据无效: \(message)")
             }
         }
         
         // 6. 如果以上都不匹配，直接返回原始链接
-        print("无法识别的链接格式，使用原始链接")
         return plistLink
     }
     
     // 添加一个方法来验证plist URL
     private func verifyPlistURL(_ urlString: String) {
         guard let url = URL(string: urlString) else {
-            print("plist URL无效: \(urlString)")
             return
         }
-        
-        print("开始验证plist URL: \(urlString)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD" // 只获取头信息，不下载内容
         request.timeoutInterval = 10
         
         URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                print("验证plist URL失败: \(error.localizedDescription)")
-                return
-            }
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                print("获取到非HTTP响应")
-                return
-            }
-            
-            print("plist URL响应状态码: \(httpResponse.statusCode)")
-            
-            // 检查内容类型
-            if let contentType = httpResponse.allHeaderFields["Content-Type"] as? String {
-                print("内容类型: \(contentType)")
-                
-                if contentType.contains("application/xml") || 
-                   contentType.contains("text/xml") || 
-                   contentType.contains("application/x-plist") {
-                    print("验证成功: 返回了有效的plist类型")
-                } else {
-                    print("警告: 内容类型可能不是plist")
-                    
-                    // 如果不是预期的类型，获取完整内容
-                    URLSession.shared.dataTask(with: url) { fullData, _, _ in
-                        if let fullData = fullData, let content = String(data: fullData, encoding: .utf8) {
-                            // 检查内容的前200个字符
-                            let previewContent = String(content.prefix(200))
-                            print("内容预览: \(previewContent)")
-                            
-                            // 检查是否是有效的plist
-                            if content.contains("<?xml") || content.contains("<!DOCTYPE") {
-                                print("内容验证: 包含XML标记，可能是有效的plist")
-                            } else {
-                                print("内容验证: 不包含XML标记，可能不是有效的plist")
-                            }
-                        }
-                    }.resume()
-                }
-            } else {
-                print("响应中没有Content-Type信息")
-            }
+            // 此处不再需要验证处理，简化为空实现
         }.resume()
     }
 
@@ -1302,30 +1157,22 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
     }
 
     private func promptUnlockCode(for app: AppData) {
-        print("显示卡密输入框 - 应用: \(app.name)")
-        print("开始准备卡密输入弹窗 - 当前线程: \(Thread.isMainThread ? "主线程" : "非主线程")")
-        
         // 检查当前是否已有弹窗显示
         if let presentedVC = self.presentedViewController {
-            print("检测到当前已有弹窗正在显示: \(type(of: presentedVC))")
             // 先关闭当前弹窗，然后再显示卡密输入框
             presentedVC.dismiss(animated: false) { [weak self] in
-                print("已关闭之前的弹窗，现在显示卡密输入框")
                 self?.createAndShowUnlockAlert(for: app)
             }
         } else {
-            print("当前没有弹窗显示，直接创建卡密输入框")
             createAndShowUnlockAlert(for: app)
         }
     }
 
     // 新增方法，将原有弹窗创建逻辑分离
     private func createAndShowUnlockAlert(for app: AppData) {
-        print("创建卡密输入弹窗 - 应用: \(app.name)")
-        
         // 创建卡密输入对话框
         let alert = UIAlertController(
-            title: "需要卡密",
+            title: "安装",
             message: "应用「\(app.name)」需要卡密才能安装\n请输入有效的卡密继续",
             preferredStyle: .alert
         )
@@ -1339,7 +1186,7 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
         }
         
         // 添加确认按钮
-        let confirmAction = UIAlertAction(title: "验证卡密", style: .default) { [weak self, weak alert] _ in
+        let confirmAction = UIAlertAction(title: "安装", style: .default) { [weak self, weak alert] _ in
             guard let unlockCode = alert?.textFields?.first?.text, !unlockCode.isEmpty else {
                 // 卡密为空，显示错误提示
                 let errorAlert = UIAlertController(
@@ -1354,8 +1201,6 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
                 self?.present(errorAlert, animated: true)
                 return
             }
-            
-            print("用户输入的卡密: \(unlockCode)")
             
             // 显示验证中提示
             let verifyingAlert = UIAlertController(
@@ -1375,55 +1220,21 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
         }
         
         // 添加取消按钮
-        let cancelAction = UIAlertAction(title: "取消", style: .cancel) { [weak self] _ in
-            // 显示提示，告知用户可以稍后解锁
-            let noticeAlert = UIAlertController(
-                title: "未解锁",
-                message: "您可以稍后再购买卡密解锁此应用",
-                preferredStyle: .alert
-            )
-            noticeAlert.addAction(UIAlertAction(title: "确定", style: .default))
-            self?.present(noticeAlert, animated: true)
-        }
-        
-        // 添加购买卡密选项
-        let buyAction = UIAlertAction(title: "购买卡密", style: .default) { [weak self] _ in
-            // 这里可以添加购买卡密的逻辑，例如打开网页或显示购买说明
-            let buyAlert = UIAlertController(
-                title: "购买卡密",
-                message: "请联系开发者购买卡密\n购买后即可解锁应用",
-                preferredStyle: .alert
-            )
-            buyAlert.addAction(UIAlertAction(title: "已购买卡密", style: .default) { _ in
-                // 再次显示卡密输入框
-                self?.promptUnlockCode(for: app)
-            })
-            buyAlert.addAction(UIAlertAction(title: "关闭", style: .cancel))
-            self?.present(buyAlert, animated: true)
-        }
+        let cancelAction = UIAlertAction(title: "取消", style: .cancel, handler: nil)
         
         // 添加按钮到对话框
         alert.addAction(confirmAction)
-        alert.addAction(buyAction)
         alert.addAction(cancelAction)
         
         // 确保在主线程上显示对话框
         if Thread.isMainThread {
-            print("当前在主线程，直接显示卡密输入框")
             self.present(alert, animated: true) {
-                print("卡密输入框显示完成")
                 alert.textFields?.first?.becomeFirstResponder()
             }
         } else {
-            print("当前非主线程，切换到主线程显示卡密输入框")
             DispatchQueue.main.async { [weak self] in
-                guard let self = self else {
-                    print("错误：self已被释放，无法显示卡密输入框")
-                    return
-                }
-                print("在主线程显示卡密输入框")
+                guard let self = self else { return }
                 self.present(alert, animated: true) {
-                    print("卡密输入框显示完成")
                     alert.textFields?.first?.becomeFirstResponder()
                 }
             }
@@ -1603,36 +1414,21 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
 
     // 添加新方法来分段处理和验证长URL
     private func safelyOpenInstallURL(_ urlString: String) {
-        print("尝试打开安装URL: \(urlString)")
-        
-        // 检查URL长度
-        if urlString.count > 2000 {
-            print("警告: URL长度超过2000个字符，可能导致问题")
-        }
-        
         // 尝试创建和打开URL
         if let url = URL(string: urlString) {
             DispatchQueue.main.async {
-                print("准备打开URL")
                 UIApplication.shared.open(url, options: [:], completionHandler: { success in
-                    if success {
-                        print("成功打开URL进行安装")
-                    } else {
-                        print("无法打开URL: \(urlString)")
+                    if !success {
                         // 尝试分析失败原因
                         self.analyzeURLOpenFailure(urlString)
                     }
                 })
             }
         } else {
-            print("无法创建URL对象，可能是格式问题")
             let modifiedURL = handlePotentiallyInvalidURL(urlString)
             if let url = URL(string: modifiedURL), modifiedURL != urlString {
-                print("尝试使用修正后的URL: \(modifiedURL)")
                 DispatchQueue.main.async {
-                    UIApplication.shared.open(url, options: [:], completionHandler: { success in
-                        print("修正URL打开结果: \(success)")
-                    })
+                    UIApplication.shared.open(url, options: [:], completionHandler: nil)
                 }
             } else {
                 showURLErrorAlert(urlString)
@@ -1644,20 +1440,11 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
     private func analyzeURLOpenFailure(_ urlString: String) {
         // 检查是否是常见的问题
         if urlString.contains(" ") {
-            print("URL含有空格，这可能导致问题")
             let trimmedURL = urlString.replacingOccurrences(of: " ", with: "%20")
             if let url = URL(string: trimmedURL) {
-                print("尝试修正空格后的URL")
                 UIApplication.shared.open(url, options: [:], completionHandler: nil)
                 return
             }
-        }
-        
-        // 检查长度问题
-        if urlString.count > 2000 {
-            // 尝试缩短URL
-            print("URL长度过长，尝试缩短")
-            // 这里可以调用URL缩短服务，或者通过其他手段简化plist URL
         }
         
         // 显示错误提示
@@ -1829,79 +1616,6 @@ class StoreCollectionViewController: UICollectionViewController, UICollectionVie
         }
     }
 
-    // 添加菜单按钮中的调试选项
-    @objc private func showDebugMenu() {
-        let debugMenu = UIAlertController(
-            title: "调试菜单",
-            message: "请选择调试选项",
-            preferredStyle: .actionSheet
-        )
-        
-        // 添加检查应用状态选项
-        debugMenu.addAction(UIAlertAction(title: "检查应用状态", style: .default) { [weak self] _ in
-            // 弹出输入应用ID的对话框
-            let inputAlert = UIAlertController(
-                title: "输入应用ID",
-                message: "请输入要检查的应用ID",
-                preferredStyle: .alert
-            )
-            
-            inputAlert.addTextField { textField in
-                textField.placeholder = "应用ID"
-                // 如果有当前选中的应用，可以预填充
-                if let apps = self?.apps, !apps.isEmpty {
-                    textField.text = apps[0].id
-                }
-            }
-            
-            inputAlert.addAction(UIAlertAction(title: "检查", style: .default) { [weak self, weak inputAlert] _ in
-                if let appId = inputAlert?.textFields?.first?.text, !appId.isEmpty {
-                    self?.checkAppUnlockStatus(for: appId)
-                }
-            })
-            
-            inputAlert.addAction(UIAlertAction(title: "取消", style: .cancel))
-            
-            self?.present(inputAlert, animated: true)
-        })
-        
-        // 添加显示UDID选项
-        debugMenu.addAction(UIAlertAction(title: "显示UDID", style: .default) { [weak self] _ in
-            let udidAlert = UIAlertController(
-                title: "设备UDID",
-                message: globalDeviceUUID ?? "未获取UDID",
-                preferredStyle: .alert
-            )
-            
-            udidAlert.addAction(UIAlertAction(title: "复制", style: .default) { _ in
-                if let udid = globalDeviceUUID {
-                    UIPasteboard.general.string = udid
-                }
-            })
-            
-            udidAlert.addAction(UIAlertAction(title: "关闭", style: .cancel))
-            
-            self?.present(udidAlert, animated: true)
-        })
-        
-        // 添加刷新应用列表选项
-        debugMenu.addAction(UIAlertAction(title: "刷新应用列表", style: .default) { [weak self] _ in
-            self?.fetchAppData()
-        })
-        
-        // 添加关闭选项
-        debugMenu.addAction(UIAlertAction(title: "关闭", style: .cancel))
-        
-        // 在iPad上需要设置弹出位置
-        if let popoverController = debugMenu.popoverPresentationController {
-            popoverController.sourceView = self.view
-            popoverController.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
-            popoverController.permittedArrowDirections = []
-        }
-        
-        present(debugMenu, animated: true)
-    }
-
     // 添加处理卡密验证结果的方法
     @objc private func handleCardVerificationResult(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
@@ -2039,12 +1753,11 @@ class AppCell: UICollectionViewCell {
         if app.requires_key == 0 {
             // 完全免费应用
             isFreemiumApp = true
-            freeLabel.isHidden = false
-            freeLabel.text = "限免"
-            freeLabel.backgroundColor = UIColor.systemRed
+            // 隐藏标签
+            freeLabel.isHidden = true
             
-            // 针对限免应用，在版本号旁边显示状态
-            versionLabel.text = "版本 \(app.version) · 限免安装"
+            // 针对限免应用，在版本号旁边显示状态，但去掉"限免安装"文字
+            versionLabel.text = "版本 \(app.version)"
             versionLabel.textColor = .systemGreen
             
             // 给限免应用的安装按钮设置不同的样式
@@ -2053,30 +1766,29 @@ class AppCell: UICollectionViewCell {
         } else if (app.requiresUnlock ?? false) && ((app.isUnlocked ?? false) || isUnlockedLocally) {
             // 已解锁的付费应用
             isFreemiumApp = true  // 使用相同的动画效果
-            freeLabel.isHidden = false
-            freeLabel.text = "已解锁"
-            freeLabel.backgroundColor = UIColor.systemBlue
+            // 隐藏标签
+            freeLabel.isHidden = true
             
-            // 显示已解锁状态
-            versionLabel.text = "版本 \(app.version) · 已解锁"
+            // 显示版本号，但去掉"已解锁"文字
+            versionLabel.text = "版本 \(app.version)"
             versionLabel.textColor = .systemBlue
             
             // 设置按钮样式
             installButton.backgroundColor = .systemBlue
-            installButton.setTitle("直接安装", for: .normal)
+            installButton.setTitle("安装", for: .normal)
         } else {
             // 未解锁的付费应用
             isFreemiumApp = false
-            freeLabel.isHidden = false
-            freeLabel.text = "需卡密"
-            freeLabel.backgroundColor = UIColor.systemOrange
+            // 隐藏标签
+            freeLabel.isHidden = true
             
-            versionLabel.text = "版本 \(app.version) · 需要卡密"
+            // 显示版本号，但去掉"需要卡密"文字
+            versionLabel.text = "版本 \(app.version)"
             versionLabel.textColor = .systemOrange
             
             // 设置未解锁付费应用的安装按钮样式
             installButton.backgroundColor = .systemOrange
-            installButton.setTitle("验证卡密", for: .normal)
+            installButton.setTitle("安装", for: .normal)
         }
         
         if let url = URL(string: app.icon) {
@@ -2105,7 +1817,7 @@ class AppCell: UICollectionViewCell {
                         if self.installButton.backgroundColor == .systemGreen {
                             self.installButton.setTitle("免费安装", for: .normal)
                         } else {
-                            self.installButton.setTitle("直接安装", for: .normal)
+                            self.installButton.setTitle("安装", for: .normal)
                         }
                     }
                 }
